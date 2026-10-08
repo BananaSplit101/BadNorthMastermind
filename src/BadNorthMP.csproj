@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net35</TargetFramework>
+    <AssemblyName>BadNorthMP</AssemblyName>
+    <RootNamespace>BadNorthMP</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- The game runs the legacy .NET 3.5 Mono runtime, but Managed\UnityEngine.dll is a facade that references
+         mscorlib 4.0. Don't let MSBuild chase reference dependencies into it (it would reject every reference). -->
+    <_FindDependencies>false</_FindDependencies>
+
+    <!-- Override on the command line if the game lives elsewhere: dotnet build -p:GameDir="D:\...\BadNorth" -->
+    <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\BadNorth</GameDir>
+    <ManagedDir>$(GameDir)\BadNorth_Data\Managed</ManagedDir>
+    <BepInExDir>$(GameDir)\BepInEx</BepInExDir>
+    <PluginDeployDir>$(BepInExDir)\plugins\BadNorthMP</PluginDeployDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp" HintPath="$(ManagedDir)\Assembly-CSharp.dll" Private="false" />
+    <Reference Include="UnityEngine" HintPath="$(ManagedDir)\UnityEngine.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(ManagedDir)\UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="UnityEngine.IMGUIModule" HintPath="$(ManagedDir)\UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.PhysicsModule" HintPath="$(ManagedDir)\UnityEngine.PhysicsModule.dll" Private="false" />
+    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(ManagedDir)\UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="BepInEx" HintPath="$(BepInExDir)\core\BepInEx.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(BepInExDir)\core\0Harmony.dll" Private="false" />
+  </ItemGroup>
+
+  <Target Name="DeployPlugin" AfterTargets="Build">
+    <MakeDir Directories="$(PluginDeployDir)" />
+    <Copy SourceFiles="$(TargetPath);$(TargetDir)$(TargetName).pdb" DestinationFolder="$(PluginDeployDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) -> $(PluginDeployDir)" />
+  </Target>
+
+</Project>

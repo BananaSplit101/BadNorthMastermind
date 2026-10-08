@@ -1,0 +1,142 @@
+using System.Collections.Generic;
+using System.Text;
+using UnityEngine;
+using Voxels.TowerDefense;
+using Voxels.TowerDefense.RaidGeneration;
+
+namespace BadNorthMP.DevTools
+{
+    /// <summary>Hotkeys that prove we can drive the game from mod code: issue squad orders and launch waves.</summary>
+    internal class DebugKeys : MonoBehaviour
+    {
+        private void Update()
+        {
+            if (Input.GetKeyDown(KeyCode.F8))
+                Run("MoveRandom", MoveSquadToRandomSpot);
+            if (Input.GetKeyDown(KeyCode.F9))
+                Run("NextWave", LaunchNextWave);
+            if (Input.GetKeyDown(KeyCode.F10))
+                Run("Dump", DumpIsland);
+        }
+
+        private static void Run(string name, System.Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (System.Exception e)
+            {
+                ModLog.Error($"{name} failed: {e}");
+            }
+        }
+
+        /// <summary>F8: order the selected squad (or the first selectable one) to a random free nav spot.</summary>
+        private static void MoveSquadToRandomSpot()
+        {
+            if (!GameAccess.IsPlaying)
+            {
+                ModLog.Warn("F8: not on an island in play");
+                return;
+            }
+
+            EnglishSquad squad = EnglishSquad.selected;
+            if (!squad)
+            {
+                foreach (Squad candidate in GameAccess.PlayerSquads)
+                {
+                    var english = candidate as EnglishSquad;
+                    if (english && english.selectable)
+                    {
+                        squad = english;
+                        break;
+                    }
+                }
+            }
+            if (!squad)
+            {
+                ModLog.Warn("F8: no selectable squad");
+                return;
+            }
+
+            var free = new List<NavSpot>();
+            foreach (NavSpot spot in GameAccess.CurrentIsland.navSpotter.navSpots)
+            {
+                if (spot && !spot.isOccupied)
+                    free.Add(spot);
+            }
+            if (free.Count == 0)
+            {
+                ModLog.Warn("F8: no free nav spots");
+                return;
+            }
+
+            NavSpot target = free[Random.Range(0, free.Count)];
+            if (!squad.navSpotOccupant.canMove)
+                ModLog.Warn($"F8: {GameAccess.Describe(squad)} can't move right now (MoveTo will ignore the order)");
+            SquadMover.MoveTo(squad, target);
+        }
+
+        /// <summary>F9: launch the next Viking wave now instead of waiting for its timer.</summary>
+        private static void LaunchNextWave()
+        {
+            if (!GameAccess.IsPlaying)
+            {
+                ModLog.Warn("F9: not on an island in play");
+                return;
+            }
+
+            Raid raid = GameAccess.CurrentIsland.raid;
+            int index = GameAccess.RaidWaveIndex(raid);
+            if (index >= raid.waves.Count)
+            {
+                ModLog.Warn("F9: all waves already launched");
+                return;
+            }
+            if (raid.waves[index].triggered)
+            {
+                // Raid only advances waveIndex once the current wave has finished launching its ships.
+                ModLog.Warn($"F9: wave {index + 1} is still launching; try again in a moment");
+                return;
+            }
+            raid.BeginNextWave();
+        }
+
+        /// <summary>F10: write the island's squads, vikings and waves to the log.</summary>
+        private static void DumpIsland()
+        {
+            Island island = GameAccess.CurrentIsland;
+            if (!island)
+            {
+                ModLog.Warn("F10: no island loaded");
+                return;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"=== Island '{island.name}' state={island.state} navSpots={island.navSpotter.navSpots.Count}");
+
+            sb.AppendLine("Player squads:");
+            foreach (Squad squad in GameAccess.PlayerSquads)
+            {
+                var english = squad as EnglishSquad;
+                string spot = english && english.navSpotOccupant ? GameAccess.Describe(english.navSpotOccupant.navSpot) : "-";
+                string hero = english && english.heroAgent
+                    ? $"hero hp {english.heroAgent.health:0.##}/{english.heroAgent.maxHealth:0.##}"
+                    : "no hero";
+                sb.AppendLine($"  {GameAccess.Describe(squad)} {hero} at {spot}");
+            }
+
+            sb.AppendLine($"Vikings on island: {island.vikings.agents.Count} agents in {island.vikings.livingSquads.Count} squads");
+
+            Raid raid = island.raid;
+            if (raid && raid.waves != null)
+            {
+                sb.AppendLine($"Raid: next wave index {GameAccess.RaidWaveIndex(raid)}, time to next {raid.GetTimeToNextWave():0.0}s");
+                for (int i = 0; i < raid.waves.Count; i++)
+                    sb.AppendLine($"  wave {i + 1}: {GameAccess.Describe(raid.waves[i])}");
+            }
+
+            ModLog.Info(sb.ToString());
+        }
+    }
+}
