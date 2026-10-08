@@ -5,17 +5,14 @@ using BadNorthMP.Net;
 using HarmonyLib;
 using UnityEngine;
 using Voxels.TowerDefense;
-using Voxels.TowerDefense.RaidGeneration;
-using Voxels.TowerDefense.Upgrades;
 
 namespace BadNorthMP.Spectator
 {
     /// <summary>
-    /// Mastermind side: the spectator island runs the real battle simulation (AI, combat, projectiles, sounds,
-    /// animation), fed the defender's units, squad positions and wave launches, and kept faithful by the
-    /// defender's authority: local damage is visual only, deaths/health/house fires come from the defender,
-    /// and positions are pulled toward the defender's snapshots.
-    /// Viking ships are generated identically on both sides (seeded raid) and matched by their place in the raid.
+    /// Mastermind side: mirrors the defender's units and longships on the spectator island. Agents are created
+    /// from the same prefabs through the game's own Squad.CreateAgent, but their AI never runs (AgentUpdater is
+    /// skipped). Everything is rendered a little in the past (InterpolationDelay) so each frame can be
+    /// interpolated between two real snapshots, including the exact animation frame.
     /// </summary>
     internal class PuppetWorld : MonoBehaviour
     {
@@ -23,41 +20,46 @@ namespace BadNorthMP.Spectator
         private const float ClockSnap = 0.5f;
         private const int MaxBuffered = 20000;
         private const int MaxSamples = 6;
-        private const float TeleportDistance = 2f;
-        private const float CorrectDistance = 0.15f;
-        private const float CorrectRate = 4f;
-        private const float MinAliveHealth = 0.02f;
 
         private struct Sample
         {
             public float time;
             public Vector3 pos;
+            public Quaternion rot;
+            public int anim;
+            public float animTime;
         }
 
-        private class Puppet
+        private class Mirror
         {
-            public Agent agent;
-            public bool native; // created by the local simulation (Viking on a seeded ship)
             public readonly List<Sample> samples = new List<Sample>(MaxSamples);
+            public Animator animator;
 
             public void Add(Sample s)
             {
                 if (samples.Count > 0 && s.time <= samples[samples.Count - 1].time)
-                    return;
+                    return; // out of order / duplicate
                 samples.Add(s);
                 if (samples.Count > MaxSamples)
                     samples.RemoveAt(0);
             }
         }
 
-        /// <summary>Set while applying a death the defender reported, so the damage patch lets it through.</summary>
-        public static bool AuthorityKill { get; private set; }
+        private class Puppet : Mirror
+        {
+            public Agent agent;
+            public Vector3 spawnPos;
+        }
+
+        private class ShipPuppet : Mirror
+        {
+            public GameObject go;
+        }
 
         private static readonly Queue<byte[]> buffered = new Queue<byte[]>();
         private static readonly Dictionary<int, Squad> squads = new Dictionary<int, Squad>();
-        private static readonly HashSet<Squad> upgradedSquads = new HashSet<Squad>();
         private static readonly Dictionary<int, Puppet> puppets = new Dictionary<int, Puppet>();
-        private static readonly Dictionary<string, List<Agent>> nativeLandings = new Dictionary<string, List<Agent>>();
+        private static readonly Dictionary<int, ShipPuppet> shipPuppets = new Dictionary<int, ShipPuppet>();
         private static readonly Dictionary<string, Agent> prefabs = new Dictionary<string, Agent>();
         private static readonly HashSet<string> warned = new HashSet<string>();
         private static List<KeyValuePair<float, byte[]>> replay;
@@ -65,9 +67,9 @@ namespace BadNorthMP.Spectator
         private static float replayStart = -1f;
         private static float latestStreamTime = -1f;
         private static float renderTime = -1f;
-        private static List<Agent> collecting;
 
         public static int PuppetCount => puppets.Count;
+        public static int ShipCount => shipPuppets.Count;
 
         private static bool Ready => SpectatorSession.Active && SpectatorSession.IslandReady();
 
@@ -79,7 +81,9 @@ namespace BadNorthMP.Spectator
                 Handle(packet);
                 return;
             }
-            if ((MsgType)packet[0] != MsgType.Snapshot && buffered.Count < MaxBuffered)
+            // Transforms are stale by the time the island loads; only keep the events.
+            var type = (MsgType)packet[0];
+            if (type != MsgType.Snapshot && type != MsgType.ShipSnapshot && buffered.Count < MaxBuffered)
                 buffered.Enqueue(packet);
         }
 
@@ -94,32 +98,14 @@ namespace BadNorthMP.Spectator
         {
             buffered.Clear();
             squads.Clear();
-            upgradedSquads.Clear();
             puppets.Clear();
-            nativeLandings.Clear();
+            shipPuppets.Clear();
             prefabs.Clear();
             warned.Clear();
             replay = null;
             latestStreamTime = -1f;
             renderTime = -1f;
-            collecting = null;
         }
-
-        // ---- Native Viking ships (Landing.Spawn on the spectator) -----------------------------
-
-        public static void OnNativeLandingSpawnBegin() => collecting = new List<Agent>();
-
-        public static void OnNativeAgentCreated(Agent agent) => collecting?.Add(agent);
-
-        public static void OnNativeLandingSpawnEnd(Landing landing)
-        {
-            List<Agent> created = collecting;
-            collecting = null;
-            if (created != null && DefenderTracker.TryGetLandingKey(landing, out int wave, out int group, out int index))
-                nativeLandings[$"{wave}/{group}/{index}"] = created;
-        }
-
-        // ---- Frame update --------------------------------------------------------------------
 
         private void Update()
         {
@@ -139,8 +125,12 @@ namespace BadNorthMP.Spectator
             }
 
             AdvanceClock(Time.unscaledDeltaTime);
-            if (renderTime >= 0)
-                CorrectPositions(Time.deltaTime);
+            if (renderTime < 0)
+                return;
+            foreach (Puppet p in puppets.Values)
+                ApplyAgent(p);
+            foreach (ShipPuppet s in shipPuppets.Values)
+                ApplyShip(s);
         }
 
         /// <summary>Render clock: runs in real time, kept InterpolationDelay behind the newest snapshot.</summary>
@@ -152,58 +142,7 @@ namespace BadNorthMP.Spectator
             if (renderTime < 0 || Mathf.Abs(renderTime - target) > ClockSnap)
                 renderTime = target;
             else
-                renderTime += dt + (target - renderTime) * 0.05f;
-        }
-
-        /// <summary>Pull each unit toward where the defender has it. Small drift is walked off, large drift snaps.</summary>
-        private static void CorrectPositions(float dt)
-        {
-            Island island = GameAccess.CurrentIsland;
-            foreach (Puppet p in puppets.Values)
-            {
-                Agent agent = p.agent;
-                if (!agent || !agent.gameObject.activeInHierarchy || !TargetAt(p, out Vector3 target))
-                    continue;
-                if (agent.deadState == null || agent.deadState.active || agent.aliveAndGrounded == null || !agent.aliveAndGrounded.active)
-                    continue; // dying, ragdolling or still aboard a ship
-                NavPos navPos = agent.navPos;
-                if (navPos.navigationMesh != island.navMesh)
-                    continue;
-
-                Vector3 error = target - agent.wPos;
-                error.y = 0f;
-                float distance = error.magnitude;
-                if (distance > TeleportDistance)
-                {
-                    agent.navPos = new NavPos(island.navMesh, target);
-                    agent.transform.position = target;
-                    agent.wPos = target;
-                }
-                else if (distance > CorrectDistance)
-                {
-                    navPos.pos += navPos.transform.InverseTransformVector(error) * Mathf.Min(1f, dt * CorrectRate);
-                    agent.navPos = navPos;
-                }
-            }
-        }
-
-        private static bool TargetAt(Puppet p, out Vector3 pos)
-        {
-            pos = Vector3.zero;
-            List<Sample> samples = p.samples;
-            if (samples.Count == 0 || samples[0].time > renderTime)
-                return false;
-            int i = samples.Count - 1;
-            while (i > 0 && samples[i].time > renderTime)
-                i--;
-            if (i == samples.Count - 1)
-            {
-                pos = samples[i].pos;
-                return true;
-            }
-            Sample a = samples[i], b = samples[i + 1];
-            pos = Vector3.Lerp(a.pos, b.pos, Mathf.InverseLerp(a.time, b.time, renderTime));
-            return true;
+                renderTime += dt + (target - renderTime) * 0.05f; // drift gently toward the target
         }
 
         // ---- Message handling ----------------------------------------------------------------
@@ -220,19 +159,18 @@ namespace BadNorthMP.Spectator
                         case MsgType.AgentSpawn: OnAgentSpawn(r); break;
                         case MsgType.AgentSpawned: OnAgentSpawned(r.ReadInt32()); break;
                         case MsgType.AgentDied: OnAgentDied(r.ReadInt32()); break;
-                        case MsgType.AgentGone: OnAgentGone(r.ReadInt32()); break;
+                        case MsgType.AgentGone: OnAgentGone(r.ReadInt32(), r.ReadBoolean()); break;
                         case MsgType.Snapshot: OnSnapshot(r); break;
                         case MsgType.HouseState: OnHouseState(r.ReadByte(), r.ReadByte()); break;
-                        case MsgType.LandingSpawned: OnLandingSpawned(r); break;
-                        case MsgType.SquadNavSpot: OnSquadNavSpot(r.ReadInt32(), r.ReadInt32()); break;
-                        case MsgType.WaveLaunch: OnWaveLaunch(r.ReadInt32()); break;
-                        case MsgType.BattlePhase: OnBattlePhase(r.ReadByte()); break;
+                        case MsgType.ShipSpawn: OnShipSpawn(r.ReadInt32(), r.ReadString()); break;
+                        case MsgType.ShipGone: OnShipGone(r.ReadInt32()); break;
+                        case MsgType.ShipSnapshot: OnShipSnapshot(r); break;
                     }
                 }
             }
             catch (Exception e)
             {
-                WarnOnce("handle " + (MsgType)packet[0], $"Spectator couldn't handle {(MsgType)packet[0]}: {e}");
+                WarnOnce("handle " + (MsgType)packet[0], $"Puppet world couldn't handle {(MsgType)packet[0]}: {e}");
             }
         }
 
@@ -248,8 +186,6 @@ namespace BadNorthMP.Spectator
             NavPos navPos = MakeNavPos(island, pos);
             if (side == 0)
             {
-                // Same as SquadSpawner.SpawnEnglishSquad; agents arrive as AgentSpawn messages and upgrades
-                // are applied once the hero (standard) exists, as in the original order.
                 var squad = (EnglishSquad)prefabManager.englishSquad.SpawnGetFromPrefab(navPos, island.english);
                 squad.squadTemplate = prefabManager.militiaTemplate;
                 var heroes = Profile.campaign.heroes;
@@ -279,106 +215,50 @@ namespace BadNorthMP.Spectator
             }
 
             Agent agent = squad.CreateAgent(prefab, MakeNavPos(squad.faction.island, pos));
-            if (squad is EnglishSquad english)
-            {
-                if (isStandard)
-                {
-                    english.standard = agent.GetComponent<Standard>();
-                    ApplyUpgrades(english);
-                }
-            }
-            else
-            {
-                SetVikingReference(squad, agent, prefabName);
-            }
-            agent.gameObject.SetActive(false); // until the defender spawns it
-            puppets[agentId] = new Puppet { agent = agent };
-        }
-
-        private static void ApplyUpgrades(EnglishSquad squad)
-        {
-            if (!upgradedSquads.Add(squad) || squad.hero == null)
-                return;
-            SquadUpgradeManager upgrades = squad.upgradeManager;
-            foreach (UpgradeComponent upgrade in ScriptableObjectSingleton<PrefabManager>.instance.universalUpgrades)
-                upgrades.AddUpgrade(upgrade, 0);
-            foreach (SerializableHeroUpgrade upgrade in squad.hero.upgrades)
-                upgrade.definition.OnAppliedToSquad(squad, upgrade.level);
-        }
-
-        private static void SetVikingReference(Squad squad, Agent agent, string prefabName)
-        {
-            VikingReference reference = squad.faction.island.levelNode.enemies.Find(v => v && v.agent && v.agent.name == prefabName);
-            if (reference)
-                agent.gameObject.GetOrAddComponent<VikingAgent>().vikingReference = reference;
-        }
-
-        private static void OnLandingSpawned(BinaryReader r)
-        {
-            string key = $"{r.ReadInt32()}/{r.ReadInt32()}/{r.ReadInt32()}";
-            int count = r.ReadInt16();
-            var ids = new int[count];
-            for (int i = 0; i < count; i++)
-                ids[i] = r.ReadInt32();
-
-            if (!nativeLandings.TryGetValue(key, out List<Agent> natives) || natives.Count != count)
-            {
-                WarnOnce("landing " + key, $"Ship {key} doesn't match the defender's ({(natives == null ? "missing" : natives.Count + " vs " + count)} Vikings); its crew won't be corrected");
-                return;
-            }
-            for (int i = 0; i < count; i++)
-                puppets[ids[i]] = new Puppet { agent = natives[i], native = true };
+            if (isStandard && squad is EnglishSquad english)
+                english.standard = agent.GetComponent<Standard>();
+            // Hidden until it shows up in a snapshot (Vikings appear when their ship sails in).
+            agent.gameObject.SetActive(false);
+            puppets[agentId] = new Puppet { agent = agent, animator = agent.animator, spawnPos = pos };
         }
 
         private static void OnAgentSpawned(int id)
         {
-            if (!puppets.TryGetValue(id, out Puppet p) || !p.agent || p.native)
-                return; // native Vikings step off their ship by themselves
-            p.agent.gameObject.SetActive(true);
-            p.agent.Spawn();
+            if (puppets.TryGetValue(id, out Puppet p) && p.agent)
+            {
+                p.agent.gameObject.SetActive(true);
+                p.agent.Spawn();
+            }
         }
 
         private static void OnAgentDied(int id)
         {
-            if (puppets.TryGetValue(id, out Puppet p) && p.agent && p.agent.deadState != null && !p.agent.deadState.active)
-                Kill(p.agent);
+            if (puppets.TryGetValue(id, out Puppet p) && p.agent && p.agent.deadState != null)
+                p.agent.deadState.SetActive(true);
         }
 
-        /// <summary>The defender says this unit died: kill it through the game's own damage path.</summary>
-        private static void Kill(Agent agent)
-        {
-            AuthorityKill = true;
-            try
-            {
-                if (!agent.gameObject.activeInHierarchy)
-                    agent.gameObject.SetActive(true);
-                agent.DealDamage(new Attack(agent.health + 1000f, 0f, 0f, -agent.transform.forward, agent.wPos, null, null, "Sword"));
-            }
-            catch (Exception e)
-            {
-                WarnOnce("kill", $"Native kill failed, forcing death: {e.Message}");
-            }
-            finally
-            {
-                AuthorityKill = false;
-            }
-            if (agent && !agent.deadState.active)
-            {
-                agent.health = 0f;
-                agent.deadState.SetActive(true);
-                if (agent.squad)
-                    agent.squad.ReportDead(agent);
-            }
-        }
-
-        private static void OnAgentGone(int id)
+        private static void OnAgentGone(int id, bool died)
         {
             if (!puppets.TryGetValue(id, out Puppet p))
                 return;
             puppets.Remove(id);
-            // Dead units finish dying locally (corpse); anything else was removed without dying (e.g. a restart).
-            if (p.agent && (p.agent.deadState == null || !p.agent.deadState.active))
-                Destroy(p.agent.gameObject);
+            if (!p.agent)
+                return;
+
+            Death death = died ? p.agent.GetComponent<Death>() : null;
+            if (death && p.agent.gameObject.activeInHierarchy)
+            {
+                try
+                {
+                    death.Die(); // corpse, blood and FinalDeath, like the real thing
+                    return;
+                }
+                catch (Exception e)
+                {
+                    WarnOnce("death", $"Puppet death failed, removing instead: {e.Message}");
+                }
+            }
+            Destroy(p.agent.gameObject);
         }
 
         private static void OnSnapshot(BinaryReader r)
@@ -390,42 +270,68 @@ namespace BadNorthMP.Spectator
             {
                 int id = r.ReadInt32();
                 Vector3 pos = r.ReadVector3();
-                r.ReadInt16();                    // yaw: the local simulation faces its own way
+                float yaw = r.ReadInt16() / 100f;
                 float health = r.ReadByte() / 255f;
-                r.ReadInt32();                    // animation: played natively
-                r.ReadUInt16();
+                int anim = r.ReadInt32();
+                float animTime = r.ReadUInt16() / 65535f;
 
                 if (!puppets.TryGetValue(id, out Puppet p) || !p.agent)
                     continue;
-                if (p.agent.deadState != null && !p.agent.deadState.active)
-                    p.agent.health = Mathf.Max(health, MinAliveHealth) * p.agent.maxHealth;
-                p.Add(new Sample { time = time, pos = pos });
+                p.agent.health = health * p.agent.maxHealth;
+                p.Add(new Sample { time = time, pos = pos, rot = Quaternion.Euler(0f, yaw, 0f), anim = anim, animTime = animTime });
             }
         }
 
-        private static void OnSquadNavSpot(int squadId, int navSpotIndex)
+        private static void OnShipSpawn(int id, string prefabName)
         {
-            if (!squads.TryGetValue(squadId, out Squad squad) || !(squad is EnglishSquad english) || !english.navSpotOccupant)
+            Island island = GameAccess.CurrentIsland;
+            Longship prefab = island.levelNode.possibleShips.Find(s => s && s.name == prefabName);
+            if (!prefab)
+            {
+                WarnOnce("ship " + prefabName, $"Can't mirror longship '{prefabName}'");
                 return;
-            NavSpot target = GameAccess.CurrentIsland.navSpotter.navSpots.Find(s => s && s.index == navSpotIndex);
-            if (target && english.navSpotOccupant.navSpot != target)
-                english.navSpotOccupant.SetNavSpot(target, showPath: false);
+            }
+
+            GameObject go = Instantiate(prefab.gameObject, island.runContainer);
+            go.SetActive(false);
+            // A visual copy only: no sailing logic, no nav mesh, no collisions.
+            var longship = go.GetComponent<Longship>();
+            if (longship.navMeshFilter && longship.navMeshFilter.GetComponent<MeshRenderer>())
+                longship.navMeshFilter.GetComponent<MeshRenderer>().enabled = false;
+            if (longship.navigationMesh)
+                longship.navigationMesh.enabled = false;
+            longship.enabled = false;
+            foreach (Collider c in go.GetComponentsInChildren<Collider>(true))
+                c.enabled = false;
+            ExtraRenderers.InitializeAll(go.transform);
+            shipPuppets[id] = new ShipPuppet { go = go, animator = go.GetComponent<Animator>() };
         }
 
-        private static void OnWaveLaunch(int waveIndex)
+        private static void OnShipGone(int id)
         {
-            Raid raid = GameAccess.CurrentIsland.raid;
-            if (!raid || raid.waves == null || waveIndex < 0 || waveIndex >= raid.waves.Count || raid.waves[waveIndex].triggered)
-                return;
-            Traverse.Create(raid).Field<int>("waveIndex").Value = waveIndex;
-            raid.BeginNextWave();
+            if (shipPuppets.TryGetValue(id, out ShipPuppet s))
+            {
+                shipPuppets.Remove(id);
+                if (s.go)
+                    Destroy(s.go);
+            }
         }
 
-        private static void OnBattlePhase(byte phase)
+        private static void OnShipSnapshot(BinaryReader r)
         {
-            var manager = Singleton<IslandGameplayManager>.instance;
-            if (phase == 1 && manager && !manager.states.running.active)
-                manager.states.running.SetActive(true); // battle music and ambience
+            float time = r.ReadSingle();
+            latestStreamTime = Mathf.Max(latestStreamTime, time);
+            int count = r.ReadInt16();
+            for (int i = 0; i < count; i++)
+            {
+                int id = r.ReadInt32();
+                Vector3 pos = r.ReadVector3();
+                var rot = new Quaternion(r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                int anim = r.ReadInt32();
+                float animTime = r.ReadUInt16() / 65535f;
+                if (shipPuppets.TryGetValue(id, out ShipPuppet s) && s.go)
+                    s.Add(new Sample { time = time, pos = pos, rot = rot, anim = anim, animTime = animTime });
+            }
         }
 
         private static void OnHouseState(byte index, byte flags)
@@ -443,6 +349,79 @@ namespace BadNorthMP.Spectator
                 house.pillaged.SetActive(true);
                 house.PaintSoot();
             }
+        }
+
+        // ---- Per-frame -----------------------------------------------------------------------
+
+        private static void ApplyAgent(Puppet p)
+        {
+            if (!p.agent || !SampleAt(p, out Sample s))
+                return;
+            if (!p.agent.gameObject.activeSelf)
+                p.agent.gameObject.SetActive(true);
+            if (p.agent.deadState != null && p.agent.deadState.active)
+            {
+                PlayFrame(p.animator, s); // keep the death animation going, but leave it where it fell
+                return;
+            }
+            Transform tr = p.agent.transform;
+            tr.position = s.pos;
+            tr.rotation = s.rot;
+            p.agent.wPos = s.pos;
+            PlayFrame(p.animator, s);
+        }
+
+        private static void ApplyShip(ShipPuppet ship)
+        {
+            if (!ship.go || !SampleAt(ship, out Sample s))
+                return;
+            if (!ship.go.activeSelf)
+                ship.go.SetActive(true);
+            ship.go.transform.position = s.pos;
+            ship.go.transform.rotation = s.rot;
+            PlayFrame(ship.animator, s);
+        }
+
+        /// <summary>The mirror's state at renderTime, interpolated between the two snapshots around it.</summary>
+        private static bool SampleAt(Mirror m, out Sample result)
+        {
+            result = default(Sample);
+            List<Sample> samples = m.samples;
+            if (samples.Count == 0 || samples[0].time > renderTime)
+                return false;
+
+            int i = samples.Count - 1;
+            while (i > 0 && samples[i].time > renderTime)
+                i--;
+            Sample a = samples[i];
+            if (i == samples.Count - 1)
+            {
+                result = a; // newest data is older than the render time: hold it
+                return true;
+            }
+            Sample b = samples[i + 1];
+            float t = Mathf.InverseLerp(a.time, b.time, renderTime);
+            result.time = renderTime;
+            result.pos = Vector3.Lerp(a.pos, b.pos, t);
+            result.rot = Quaternion.Slerp(a.rot, b.rot, t);
+            if (a.anim == b.anim)
+            {
+                float end = b.animTime < a.animTime ? b.animTime + 1f : b.animTime; // looped around
+                result.anim = a.anim;
+                result.animTime = Mathf.Lerp(a.animTime, end, t) % 1f;
+            }
+            else
+            {
+                result.anim = t < 0.5f ? a.anim : b.anim;
+                result.animTime = t < 0.5f ? a.animTime : b.animTime;
+            }
+            return true;
+        }
+
+        private static void PlayFrame(Animator animator, Sample s)
+        {
+            if (s.anim != 0 && animator && animator.isActiveAndEnabled)
+                animator.Play(s.anim, 0, s.animTime);
         }
 
         // ---- Helpers -------------------------------------------------------------------------
@@ -475,62 +454,17 @@ namespace BadNorthMP.Spectator
         }
     }
 
-    // ---- Spectator-only patches that keep the local simulation under the defender's authority ----
-
-    [HarmonyPatch(typeof(Agent), nameof(Agent.DealDamage))]
-    internal static class SpectatorDamagePatch
+    [HarmonyPatch(typeof(AgentUpdater), "Update")]
+    internal static class SpectatorAgentUpdaterPatch
     {
-        // Hits still knock back, stagger and play effects, but only the defender decides who dies.
-        private static void Prefix(ref Attack attack)
-        {
-            if (SpectatorSession.Active && !PuppetWorld.AuthorityKill)
-                attack.damage = 0f;
-        }
-    }
-
-    [HarmonyPatch(typeof(House), nameof(House.TorchLand))]
-    internal static class SpectatorTorchLandPatch
-    {
-        // The torch still flies; whether the house burns comes from the defender.
+        // All agent AI, movement, combat and push-apart physics run from here; puppets are driven instead.
         private static bool Prefix() => !SpectatorSession.Active;
-    }
-
-    [HarmonyPatch(typeof(House), nameof(House.TorchThrow))]
-    internal static class SpectatorTorchThrowPatch
-    {
-        private static bool Prefix() => !SpectatorSession.Active;
-    }
-
-    [HarmonyPatch(typeof(Landing), nameof(Landing.Spawn))]
-    internal static class SpectatorLandingSpawnPatch
-    {
-        private static void Prefix()
-        {
-            if (SpectatorSession.Active)
-                PuppetWorld.OnNativeLandingSpawnBegin();
-        }
-
-        private static void Postfix(Landing __instance)
-        {
-            if (SpectatorSession.Active)
-                PuppetWorld.OnNativeLandingSpawnEnd(__instance);
-        }
-    }
-
-    [HarmonyPatch(typeof(Squad), nameof(Squad.CreateAgent))]
-    internal static class SpectatorCreateAgentPatch
-    {
-        private static void Postfix(Agent __result)
-        {
-            if (SpectatorSession.Active)
-                PuppetWorld.OnNativeAgentCreated(__result);
-        }
     }
 
     [HarmonyPatch(typeof(SquadSelector), nameof(SquadSelector.SelectSquad), typeof(EnglishSquad), typeof(bool))]
     internal static class SpectatorSelectPatch
     {
-        // The mastermind can't command the defender's squads.
+        // The mastermind can't command the defender's squads (selecting would also slow time).
         private static bool Prefix(EnglishSquad newSelection) => !(SpectatorSession.Active && newSelection);
     }
 }

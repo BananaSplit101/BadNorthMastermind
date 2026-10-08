@@ -1,4 +1,7 @@
+using System.Collections.Generic;
+using System.Reflection;
 using HarmonyLib;
+using Voxels;
 using Voxels.TowerDefense;
 
 namespace BadNorthMP.Spectator
@@ -37,5 +40,26 @@ namespace BadNorthMP.Spectator
     internal static class SpectatorPreparePhasePatch
     {
         private static bool Prefix() => !SpectatorSession.Active;
+    }
+
+    // Raid implements IIslandPlay explicitly; it spawns every longship (hidden, offshore) up front.
+    [HarmonyPatch]
+    internal static class SpectatorRaidPlayPatch
+    {
+        private static MethodBase TargetMethod() =>
+            AccessTools.Method(typeof(Raid), "Voxels.TowerDefense.IIslandPlay.OnIslandPlay");
+
+        private static bool Prefix(ref IEnumerator<GenInfo> __result)
+        {
+            if (!SpectatorSession.Active)
+                return true;
+            __result = Nothing();
+            return false;
+        }
+
+        private static IEnumerator<GenInfo> Nothing()
+        {
+            yield break;
+        }
     }
 }

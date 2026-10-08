@@ -17,7 +17,7 @@ namespace BadNorthMP.Net
     internal static class BattleStream
     {
         public const int FileMagic = 0x504D4E42; // "BNMP"
-        public const int FileVersion = 4;
+        public const int FileVersion = 3;
 
         public static bool Active { get; private set; }
 
