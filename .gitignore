@@ -4,3 +4,4 @@ decompiled/
 *.user
 .vs/
 dist/
+save-backup/

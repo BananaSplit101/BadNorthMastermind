@@ -37,7 +37,18 @@ namespace BadNorthMP.Spectator
 
         private static Traverse HandlerField => Traverse.Create(typeof(SaveGameUtilities)).Field("_handler");
 
-        private void Awake() => Instance = this;
+        // Testing aid: launch with --bnmp-autowatch to spectate the last battle as soon as the main menu
+        // is up, log what loaded, and leave again after AutoWatchSeconds.
+        private const float AutoWatchSeconds = 20f;
+        private bool autoWatchPending;
+        private bool autoWatching;
+        private float autoStopAt = -1f;
+
+        private void Awake()
+        {
+            Instance = this;
+            autoWatchPending = Array.IndexOf(Environment.GetCommandLineArgs(), "--bnmp-autowatch") >= 0;
+        }
 
         /// <summary>Queue a battle to watch. Starts as soon as the player is at the main menu.</summary>
         public void Watch(BattleInfo info)
@@ -72,6 +83,8 @@ namespace BadNorthMP.Spectator
 
         private void Update()
         {
+            UpdateAutoWatch();
+
             if (pending != null && !Active && AtMainMenu())
             {
                 BattleInfo info = pending;
@@ -99,6 +112,38 @@ namespace BadNorthMP.Spectator
                 Restore();
         }
 
+        private void UpdateAutoWatch()
+        {
+            if (autoWatchPending && AtMainMenu())
+            {
+                autoWatchPending = false;
+                autoWatching = true;
+                ModLog.Info("Auto-watch: spectating the last battle");
+                WatchLastBattle();
+            }
+            if (!autoWatching || !Active)
+                return;
+            if (autoStopAt < 0 && IslandReady())
+            {
+                autoStopAt = Time.unscaledTime + AutoWatchSeconds;
+                ModLog.Info($"Auto-watch: island is up: {DescribeIsland()}");
+            }
+            else if (autoStopAt >= 0 && Time.unscaledTime >= autoStopAt)
+            {
+                autoWatching = false;
+                ModLog.Info("Auto-watch: leaving");
+                Stop();
+            }
+        }
+
+        private static string DescribeIsland()
+        {
+            Island island = Singleton<IslandGameplayManager>.instance.island;
+            return $"'{island.name}' level={island.levelNode.index} english={island.english.agents.Count} " +
+                   $"vikings={island.vikings.agents.Count} navSpots={island.navSpotter.navSpots.Count} " +
+                   $"houses={(island.village ? island.village.houses.Length : 0)} camera={(bool)Singleton<LevelCamera>.instance}";
+        }
+
         private static bool AtMainMenu()
         {
             var campaigns = Singleton<CampaignManager>.instance;
@@ -115,7 +160,7 @@ namespace BadNorthMP.Spectator
         {
             CampaignSave save = info.LoadCampaignSave();
             if (info.levelIndex < 0 || info.levelIndex >= save.levelStates.Count)
-                throw new InvalidDataException($"level {info.levelIndex} not in campaign ({save.levelStates.Count} levels)");
+                throw new InvalidOperationException($"level {info.levelIndex} not in campaign ({save.levelStates.Count} levels)");
 
             // From here on nothing may reach the player's save files.
             savedCampaign = Profile.campaign;

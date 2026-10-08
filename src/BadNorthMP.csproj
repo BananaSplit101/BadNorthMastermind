@@ -10,6 +10,10 @@
     <!-- The game runs the legacy .NET 3.5 Mono runtime, but Managed\UnityEngine.dll is a facade that references
          mscorlib 4.0. Don't let MSBuild chase reference dependencies into it (it would reject every reference). -->
     <_FindDependencies>false</_FindDependencies>
+    <!-- Compile against the game's own (stripped) mscorlib/System/System.Core instead of the full .NET 3.5
+         reference assemblies, so APIs the game doesn't ship are build errors instead of in-game TypeLoadExceptions. -->
+    <NoStdLib>true</NoStdLib>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
 
     <!-- Override on the command line if the game lives elsewhere: dotnet build -p:GameDir="D:\...\BadNorth" -->
     <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\BadNorth</GameDir>
@@ -23,6 +27,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="mscorlib" HintPath="$(ManagedDir)\mscorlib.dll" Private="false" />
+    <Reference Include="System" HintPath="$(ManagedDir)\System.dll" Private="false" />
+    <Reference Include="System.Core" HintPath="$(ManagedDir)\System.Core.dll" Private="false" />
     <Reference Include="Assembly-CSharp" HintPath="$(ManagedDir)\Assembly-CSharp.dll" Private="false" />
     <Reference Include="UnityEngine" HintPath="$(ManagedDir)\UnityEngine.dll" Private="false" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(ManagedDir)\UnityEngine.CoreModule.dll" Private="false" />

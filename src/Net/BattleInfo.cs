@@ -57,7 +57,7 @@ namespace BadNorthMP.Net
                 int format = r.ReadInt32();
                 string version = r.ReadString();
                 if (format != FormatVersion)
-                    throw new InvalidDataException($"Battle data from mod {version} isn't readable by {Plugin.Version}");
+                    throw new InvalidOperationException($"Battle data from mod {version} isn't readable by {Plugin.Version}");
                 var info = new BattleInfo { levelIndex = r.ReadInt32() };
                 info.campaignSave = r.ReadBytes(r.ReadInt32());
                 return info;
