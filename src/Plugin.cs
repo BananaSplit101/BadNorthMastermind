@@ -1,6 +1,8 @@
 using BepInEx;
 using HarmonyLib;
 using BadNorthMP.DevTools;
+using BadNorthMP.Net;
+using BadNorthMP.UI;
 
 namespace BadNorthMP
 {
@@ -9,7 +11,7 @@ namespace BadNorthMP
     {
         public const string Id = "com.bananasplit.badnorthmp";
         public const string Name = "Bad North Multiplayer";
-        public const string Version = "0.1.0";
+        public const string Version = "0.2.0";
 
         private void Awake()
         {
@@ -20,6 +22,9 @@ namespace BadNorthMP
             foreach (var method in harmony.GetPatchedMethods())
                 ModLog.Info($"Patched {method.DeclaringType?.Name}.{method.Name}");
 
+            gameObject.AddComponent<SteamSession>();
+            gameObject.AddComponent<MultiplayerGame>();
+            gameObject.AddComponent<MultiplayerMenu>();
             gameObject.AddComponent<DebugKeys>();
             gameObject.AddComponent<DebugOverlay>();
 

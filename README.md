@@ -3,7 +3,13 @@
 A work-in-progress asymmetric multiplayer mod for [Bad North: Jotunn Edition](https://store.steampowered.com/app/688420/).
 Defenders each command their own squads, while a "mastermind" player summons the Viking waves.
 
-**Status:** Foundation only. The plugin logs squad orders and wave launches and can issue both from hotkeys. There is no networking yet.
+**Status:** First playable slice. The host creates a Steam lobby and invites a friend. The host defends, and the friend is the mastermind who decides when the host's Viking waves launch (`Multiplayer` button, top-right). The island itself isn't synced yet, so the mastermind sees a status readout rather than the battle.
+
+## Making a test build for a friend
+```
+pwsh tools/package.ps1
+```
+This produces `dist/BadNorthMP-<version>.zip`, containing the BepInEx loader, the plugin and `INSTALL.txt`. Close the game first, so your own install gets the same DLL (the version check refuses mismatched builds). Bump `Plugin.Version` whenever you send a new build.
 
 ## Setup
 1. Install **BepInEx 5 x86** (the game is 32-bit): extract `BepInEx_win_x86_5.4.23.x.zip` from

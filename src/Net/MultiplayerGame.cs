@@ -1,0 +1,198 @@
+using System.Collections.Generic;
+using System.IO;
+using Steamworks;
+using UnityEngine;
+using Voxels.TowerDefense;
+
+namespace BadNorthMP.Net
+{
+    /// <summary>
+    /// First multiplayer slice: the lobby host is the defender playing the battle, guests are masterminds
+    /// who decide when the host's Viking waves launch. Nothing about the island itself is synced yet.
+    /// </summary>
+    internal class MultiplayerGame : MonoBehaviour
+    {
+        private const float PingInterval = 2f;
+        private const float StatusInterval = 0.5f;
+        private const int MaxEvents = 8;
+
+        public static MultiplayerGame Instance { get; private set; }
+
+        /// <summary>Host option: while a mastermind is connected, waves only launch when they say so.</summary>
+        public bool mastermindControlEnabled = true;
+
+        /// <summary>Read by the Raid.MaybeLaunchWaves patch.</summary>
+        public static bool MastermindControlsWaves =>
+            Instance && Instance.mastermindControlEnabled && Session.IsHost && Session.Members().Count > 1;
+
+        /// <summary>Latest battle snapshot from the host (guests only).</summary>
+        public IslandStatus HostStatus { get; private set; }
+        public bool HasHostStatus { get; private set; }
+
+        public IEnumerable<string> Events => events;
+
+        private static SteamSession Session => SteamSession.Instance;
+
+        private readonly Dictionary<ulong, float> pingMs = new Dictionary<ulong, float>();
+        private readonly Queue<string> events = new Queue<string>();
+        private CSteamID knownHost = CSteamID.Nil;
+        private float nextPing;
+        private float nextStatus;
+
+        private void Awake() => Instance = this;
+
+        private void Start()
+        {
+            Session.MessageReceived += OnMessage;
+            Session.LobbyChanged += OnLobbyChanged;
+        }
+
+        private void Update()
+        {
+            if (!Session.InLobby)
+                return;
+
+            float now = Time.realtimeSinceStartup;
+            if (now >= nextPing)
+            {
+                nextPing = now + PingInterval;
+                Session.Broadcast(Packet.Build(MsgType.Ping, w => w.Write(now)), reliable: false);
+            }
+            if (Session.IsHost && now >= nextStatus)
+            {
+                nextStatus = now + StatusInterval;
+                IslandStatus status = BuildStatus();
+                Session.Broadcast(Packet.Build(MsgType.Status, status.Write), reliable: false);
+            }
+        }
+
+        public string PingText(CSteamID user) =>
+            pingMs.TryGetValue(user.m_SteamID, out float ms) ? $"{ms:0} ms" : "...";
+
+        // ---- Actions from the UI -------------------------------------------------------------
+
+        public void RequestWave()
+        {
+            if (Session.IsHost)
+                HandleWaveRequest(Session.Me);
+            else
+                Session.Send(Session.Owner, Packet.Build(MsgType.WaveRequest));
+        }
+
+        public void SendChat(string text)
+        {
+            text = text.Trim();
+            if (text.Length == 0)
+                return;
+            if (text.Length > 200)
+                text = text.Substring(0, 200);
+            Session.Broadcast(Packet.Build(MsgType.Chat, w => w.Write(text)));
+            AddEvent($"{SteamFriends.GetPersonaName()}: {text}");
+        }
+
+        // ---- Networking ----------------------------------------------------------------------
+
+        private void OnLobbyChanged()
+        {
+            if (!Session.InLobby)
+            {
+                knownHost = CSteamID.Nil;
+                HasHostStatus = false;
+                pingMs.Clear();
+                return;
+            }
+
+            CSteamID owner = Session.Owner;
+            if (knownHost == CSteamID.Nil)
+            {
+                knownHost = owner;
+            }
+            else if (owner != knownHost && !Session.IsHost)
+            {
+                // Host migration isn't supported: the battle lives on the original host's machine.
+                Session.Leave("The host left the game");
+                AddEvent("The host left the game");
+                return;
+            }
+            AddEvent($"Players: {Session.Members().Count}");
+        }
+
+        private void OnMessage(CSteamID sender, byte[] data)
+        {
+            using (var reader = new BinaryReader(new MemoryStream(data)))
+            {
+                var type = (MsgType)reader.ReadByte();
+                bool fromHost = sender == Session.Owner;
+                switch (type)
+                {
+                    case MsgType.Ping:
+                        float sentAt = reader.ReadSingle();
+                        Session.Send(sender, Packet.Build(MsgType.Pong, w => w.Write(sentAt)), reliable: false);
+                        break;
+
+                    case MsgType.Pong:
+                        pingMs[sender.m_SteamID] = (Time.realtimeSinceStartup - reader.ReadSingle()) * 1000f;
+                        break;
+
+                    case MsgType.Chat:
+                        AddEvent($"{SteamSession.NameOf(sender)}: {reader.ReadString()}");
+                        break;
+
+                    case MsgType.Status:
+                        if (fromHost)
+                        {
+                            HostStatus = IslandStatus.Read(reader);
+                            HasHostStatus = true;
+                        }
+                        break;
+
+                    case MsgType.WaveRequest:
+                        if (Session.IsHost)
+                            HandleWaveRequest(sender);
+                        break;
+
+                    case MsgType.Notice:
+                        if (fromHost)
+                            AddEvent(reader.ReadString());
+                        break;
+                }
+            }
+        }
+
+        private void HandleWaveRequest(CSteamID requester)
+        {
+            string name = SteamSession.NameOf(requester);
+            bool ok = GameAccess.TryLaunchNextWave(out string result);
+            string notice = ok ? $"{name} {result}!" : $"{name}'s wave request refused: {result}";
+            ModLog.Info(notice);
+            AddEvent(notice);
+            Session.Broadcast(Packet.Build(MsgType.Notice, w => w.Write(notice)));
+        }
+
+        private static IslandStatus BuildStatus()
+        {
+            var status = new IslandStatus { mastermindControlsWaves = MastermindControlsWaves };
+            Island island = GameAccess.CurrentIsland;
+            if (!island || island.state != Island.State.Playing || !island.raid || island.raid.waves == null)
+                return status;
+
+            Raid raid = island.raid;
+            int index = GameAccess.RaidWaveIndex(raid);
+            status.onIsland = true;
+            status.waveCount = raid.waves.Count;
+            status.nextWave = index + 1;
+            status.waveLaunching = index < raid.waves.Count && raid.waves[index].triggered;
+            status.squadsAlive = GameAccess.PlayerSquads.Count;
+            status.vikingsAlive = island.vikings ? island.vikings.agents.Count : 0;
+            status.timeToNextWave = raid.GetTimeToNextWave();
+            return status;
+        }
+
+        private void AddEvent(string text)
+        {
+            events.Enqueue(text);
+            while (events.Count > MaxEvents)
+                events.Dequeue();
+        }
+    }
+}

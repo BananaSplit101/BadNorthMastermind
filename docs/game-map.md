@@ -48,4 +48,8 @@ To regenerate the decompiled source, see the README. All paths below are relativ
   - `SteamJoining` (invites and join requests)
   - `SteamManager`
 - The Steamworks.NET bindings (`Steamworks.*`) are compiled into `Assembly-CSharp`, so `SteamNetworking.SendP2PPacket` is usable directly.
+- That platform layer is live. `CorePlatformSetup` adds `SteamManager`, and `BasePlatformManager.Update` → `SteamAPI.RunCallbacks()` runs on the **main thread**. Steamworks calls are only valid once `CS.Platform.BasePlatformManager.Initialized` is true.
+  - `SteamPostBox` accepts every `P2PSessionRequest` and reads channel 1 (`SteamElements.ClientChannel`; 2 is the server channel and 3 is voice). The mod uses channel 7.
+  - `SteamLobby` listens to every lobby callback and mirrors whichever lobby we're in. No Bad North code subscribes to the resulting `PlatformEvents`, so this is harmless.
+  - `SteamJoining.OnGameLobbyJoinRequested` auto-joins invited lobbies, and `OnJoinUser` parses rich presence `connect` as `ip:port` (it throws on anything else). The mod disables both (`Patches/SteamPatches.cs`).
 - There's a dev console from ReflexCLI (`[ConsoleCommand]` attributes on things like `SquadSelector.SelectNext` and `Raid.bountyMultiplier`). How to open it is still unknown.

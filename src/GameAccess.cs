@@ -41,6 +41,34 @@ namespace BadNorthMP
         /// <summary>Raid.waveIndex is private; it is the next wave to launch (or the one launching).</summary>
         public static int RaidWaveIndex(Raid raid) => Traverse.Create(raid).Field<int>("waveIndex").Value;
 
+        /// <summary>Launch the next Viking wave now. Returns false (with the reason) if it can't.</summary>
+        public static bool TryLaunchNextWave(out string message)
+        {
+            if (!IsPlaying)
+            {
+                message = "not on an island in play";
+                return false;
+            }
+
+            Raid raid = CurrentIsland.raid;
+            int index = RaidWaveIndex(raid);
+            if (index >= raid.waves.Count)
+            {
+                message = "all waves already launched";
+                return false;
+            }
+            if (raid.waves[index].triggered)
+            {
+                // Raid only advances waveIndex once the current wave has finished launching its ships.
+                message = $"wave {index + 1} is still launching";
+                return false;
+            }
+
+            raid.BeginNextWave();
+            message = $"launched wave {index + 1}/{raid.waves.Count}";
+            return true;
+        }
+
         public static string Describe(Squad squad)
         {
             if (!squad)

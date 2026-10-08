@@ -80,26 +80,8 @@ namespace BadNorthMP.DevTools
         /// <summary>F9: launch the next Viking wave now instead of waiting for its timer.</summary>
         private static void LaunchNextWave()
         {
-            if (!GameAccess.IsPlaying)
-            {
-                ModLog.Warn("F9: not on an island in play");
-                return;
-            }
-
-            Raid raid = GameAccess.CurrentIsland.raid;
-            int index = GameAccess.RaidWaveIndex(raid);
-            if (index >= raid.waves.Count)
-            {
-                ModLog.Warn("F9: all waves already launched");
-                return;
-            }
-            if (raid.waves[index].triggered)
-            {
-                // Raid only advances waveIndex once the current wave has finished launching its ships.
-                ModLog.Warn($"F9: wave {index + 1} is still launching; try again in a moment");
-                return;
-            }
-            raid.BeginNextWave();
+            if (!GameAccess.TryLaunchNextWave(out string message))
+                ModLog.Warn("F9: " + message);
         }
 
         /// <summary>F10: write the island's squads, vikings and waves to the log.</summary>
