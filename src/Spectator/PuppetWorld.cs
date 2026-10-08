@@ -217,6 +217,15 @@ namespace BadNorthMP.Spectator
             Agent agent = squad.CreateAgent(prefab, MakeNavPos(squad.faction.island, pos));
             if (isStandard && squad is EnglishSquad english)
                 english.standard = agent.GetComponent<Standard>();
+            if (squad.faction.side != Faction.Side.English)
+            {
+                // Landing.Spawn sets this; VikingSquadDifficulty and others read it when the agent spawns.
+                VikingReference reference = squad.faction.island.levelNode.enemies.Find(v => v && v.agent && v.agent.name == prefabName);
+                if (reference)
+                    agent.gameObject.GetOrAddComponent<VikingAgent>().vikingReference = reference;
+                else
+                    WarnOnce("vikingref " + prefabName, $"No VikingReference for '{prefabName}'");
+            }
             // Hidden until it shows up in a snapshot (Vikings appear when their ship sails in).
             agent.gameObject.SetActive(false);
             puppets[agentId] = new Puppet { agent = agent, animator = agent.animator, spawnPos = pos };
