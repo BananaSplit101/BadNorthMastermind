@@ -18,7 +18,7 @@ namespace BadNorthMP.UI
     internal class MultiplayerScreen : MonoBehaviour
     {
         private const float RefreshSeconds = 0.25f;
-        // Any real term works: the label is overwritten with plain text right after.
+        // Any real term works: the label is replaced with plain text right after.
         private const string PlaceholderTerm = "UI/COMMON/OK";
 
         private static MultiplayerScreen instance;
@@ -50,7 +50,7 @@ namespace BadNorthMP.UI
 
             if (LayoutKey() != shownLayout)
             {
-                // Different set of buttons needed (hosted, joined, left...): swap in a fresh popup.
+                // Different set of buttons needed (hosted, joined, role changed...): swap in a fresh popup.
                 ModalOverlay old = overlay;
                 overlay = null;
                 old.Dismiss();
@@ -60,7 +60,7 @@ namespace BadNorthMP.UI
 
             messageText.text = BuildBody();
             foreach (var entry in dynamicLabels)
-                entry.Key.SetNonLocalizedLabel(entry.Value());
+                entry.Key.label.text = entry.Value();
         }
 
         private void Show()
@@ -77,24 +77,23 @@ namespace BadNorthMP.UI
             traverse.Field<Localize>("messageLocalize").Value.enabled = false;
             messageText = traverse.Field<Text>("message").Value;
 
-            if (!Session.Ready)
-            {
-                // Nothing to do until Steam is up.
-            }
-            else if (!Session.InLobby)
+            if (Session.Ready && !Session.InLobby)
             {
                 AddButton("Host game", Session.Host);
             }
-            else if (Session.IsHost)
+            else if (Session.InLobby)
             {
-                AddButton("Invite friend", Session.OpenInviteDialog);
-                AddDynamicButton(() => "Mastermind controls waves: " + (Game.mastermindControlEnabled ? "On" : "Off"),
-                    () => Game.mastermindControlEnabled = !Game.mastermindControlEnabled);
-                AddButton("Leave lobby", Session.Leave);
-            }
-            else
-            {
-                AddButton("Launch next wave", Game.RequestWave);
+                if (Session.IsHost)
+                {
+                    AddButton("Invite friend", Session.OpenInviteDialog);
+                    if (Session.Members().Count > 1)
+                        AddDynamicButton(MastermindChoiceLabel, Roles.CycleChoice);
+                }
+                if (Roles.IsMastermind)
+                    AddButton("Launch next wave", Game.RequestWave);
+                else if (Roles.HasMastermind)
+                    AddDynamicButton(() => "Mastermind controls waves: " + (Game.mastermindControlEnabled ? "On" : "Off"),
+                        () => Game.mastermindControlEnabled = !Game.mastermindControlEnabled);
                 AddButton("Leave lobby", Session.Leave);
             }
 
@@ -112,21 +111,29 @@ namespace BadNorthMP.UI
                 return "wait";
             if (!Session.InLobby)
                 return "idle";
-            return Session.IsHost ? "host" : "guest";
+            return $"{(Session.IsHost ? "host" : "guest")}/{Session.Members().Count}/{(Roles.IsMastermind ? "mm" : "def")}";
+        }
+
+        private static string MastermindChoiceLabel()
+        {
+            string name = SteamSession.NameOf(Roles.MastermindId);
+            if (Roles.MastermindId == Session.Me)
+                name = "You";
+            return Roles.IsRandom ? $"Mastermind: Random ({name})" : $"Mastermind: {name}";
         }
 
         // ModalOverlay closes itself when a button's action returns true. Return false to keep the screen
         // open, and use the click sound as the "fail" sound so it still sounds like a normal press.
         private Widget AddButton(string label, Action action)
         {
-            return overlay.AddButton(PlaceholderTerm, () =>
+            Widget widget = overlay.AddButton(PlaceholderTerm, () =>
                 {
                     action();
                     return false;
                 })
-                .SetNonLocalizedLabel(label)
                 .SetFailAudio(FabricID.uiButtonClick)
                 .SetHoverAudio(FabricID.uiHover);
+            return GameUi.SetPlainLabel(widget, label);
         }
 
         private void AddDynamicButton(Func<string> label, Action action)
@@ -145,45 +152,39 @@ namespace BadNorthMP.UI
             {
                 if (Session.Status != "Not connected")
                     sb.AppendLine(Session.Status).AppendLine();
-                sb.AppendLine("Host a game and invite a friend. You defend the islands; your friend is the mastermind who decides when the Viking waves strike.");
+                sb.AppendLine("Host a game and invite a friend. One of you defends the islands; the other is the mastermind who decides when and where the Vikings strike.");
                 sb.AppendLine();
                 sb.Append("To join a friend, accept their invite in Steam.");
                 return sb.ToString();
             }
 
-            CSteamID owner = Session.Owner;
             foreach (CSteamID member in Session.Members())
             {
-                string role = member == owner ? "Defender" : "Mastermind";
+                string role = Session.Members().Count > 1 ? Roles.RoleOf(member) : "Waiting for a friend";
                 string ping = member == Session.Me ? "you" : Game.PingText(member);
                 sb.AppendLine($"{SteamSession.NameOf(member)}  -  {role}  ({ping})");
             }
             sb.AppendLine();
 
-            if (Session.IsHost)
-            {
-                if (Session.Members().Count < 2)
-                    sb.AppendLine("Waiting for a mastermind to join...");
-                else
-                    sb.AppendLine(MultiplayerGame.MastermindControlsWaves
-                        ? "Your mastermind decides when the waves come."
-                        : "Waves arrive on the normal timer.");
-            }
+            if (!Roles.HasMastermind)
+                sb.AppendLine("Invite a friend to play.");
+            else if (Roles.IsMastermind)
+                sb.AppendLine(DescribeDefenderBattle());
             else
-            {
-                sb.AppendLine(DescribeHostBattle());
-            }
+                sb.AppendLine("Start or continue a campaign and pick an island. " + (MultiplayerGame.MastermindControlsWaves
+                    ? "Your mastermind decides when the waves come."
+                    : "Waves arrive on the normal timer."));
 
             foreach (string line in Game.RecentEvents(3))
                 sb.AppendLine().Append(line);
             return sb.ToString();
         }
 
-        private static string DescribeHostBattle()
+        private static string DescribeDefenderBattle()
         {
-            if (!Game.HasHostStatus)
-                return "Waiting for the host...";
-            IslandStatus s = Game.HostStatus;
+            if (!Game.HasDefenderStatus)
+                return "Waiting for the defender...";
+            IslandStatus s = Game.DefenderStatus;
             if (!s.onIsland)
                 return "The defender isn't in a battle yet.";
 

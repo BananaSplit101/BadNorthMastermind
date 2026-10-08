@@ -13,7 +13,7 @@ namespace BadNorthMP.Net
     {
         // The game's platform layer uses P2P channels 1-3 (SteamElements); stay clear of them.
         public const int Channel = 7;
-        private const int MaxMembers = 4;
+        private const int MaxMembers = 2; // one defender, one mastermind for now
         private const string VersionKey = "bnmp_version";
         private const uint EnterResponseSuccess = 1;
 
@@ -31,6 +31,7 @@ namespace BadNorthMP.Net
 
         private Callback<LobbyEnter_t> lobbyEnter;
         private Callback<LobbyChatUpdate_t> lobbyChatUpdate;
+        private Callback<LobbyDataUpdate_t> lobbyDataUpdate;
         private Callback<GameLobbyJoinRequested_t> lobbyJoinRequested;
         private Callback<GameRichPresenceJoinRequested_t> richPresenceJoinRequested;
         private Callback<P2PSessionRequest_t> p2pSessionRequest;
@@ -75,6 +76,7 @@ namespace BadNorthMP.Net
         {
             lobbyEnter = Callback<LobbyEnter_t>.Create(OnLobbyEnter);
             lobbyChatUpdate = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdate);
+            lobbyDataUpdate = Callback<LobbyDataUpdate_t>.Create(OnLobbyDataUpdate);
             lobbyJoinRequested = Callback<GameLobbyJoinRequested_t>.Create(OnLobbyJoinRequested);
             richPresenceJoinRequested = Callback<GameRichPresenceJoinRequested_t>.Create(OnRichPresenceJoinRequested);
             p2pSessionRequest = Callback<P2PSessionRequest_t>.Create(OnP2PSessionRequest);
@@ -143,6 +145,15 @@ namespace BadNorthMP.Net
         }
 
         public CSteamID Owner => InLobby ? SteamMatchmaking.GetLobbyOwner(Lobby) : CSteamID.Nil;
+
+        public string GetLobbyData(string key) => InLobby ? SteamMatchmaking.GetLobbyData(Lobby, key) : "";
+
+        /// <summary>Only the lobby owner can write lobby data; Steam ignores it from anyone else.</summary>
+        public void SetLobbyData(string key, string value)
+        {
+            if (IsHost)
+                SteamMatchmaking.SetLobbyData(Lobby, key, value);
+        }
 
         public static string NameOf(CSteamID user) => SteamFriends.GetFriendPersonaName(user);
 
@@ -243,6 +254,15 @@ namespace BadNorthMP.Net
             bool entered = (update.m_rgfChatMemberStateChange & 1) != 0;
             ModLog.Info($"{NameOf(user)} {(entered ? "joined" : "left")}");
             LobbyChanged();
+        }
+
+        public event Action LobbyDataChanged = delegate { };
+
+        private void OnLobbyDataUpdate(LobbyDataUpdate_t update)
+        {
+            // Fires for lobby-wide data (not member data) when SteamIDMember == lobby id.
+            if (update.m_ulSteamIDLobby == Lobby.m_SteamID && update.m_ulSteamIDMember == Lobby.m_SteamID)
+                LobbyDataChanged();
         }
 
         // Friend accepted an invite (or clicked Join Game) while the game was already running.

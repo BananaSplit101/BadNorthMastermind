@@ -10,23 +10,24 @@ namespace BadNorthMP.Patches
     [HarmonyPatch(typeof(MainMenu), "Initialize")]
     internal static class MainMenuPatch
     {
-        private static void Postfix(MainMenu __instance) => MenuButtons.AddAfterFirst(__instance, "UI/MAIN_MENU/PLAY");
+        private static void Postfix(MainMenu __instance) => MenuButtons.AddAfter(__instance, "UI/MAIN_MENU/PLAY");
     }
 
     [HarmonyPatch(typeof(PauseMenu), "Initialize")]
     internal static class PauseMenuPatch
     {
-        private static void Postfix(PauseMenu __instance) => MenuButtons.AddAfterFirst(__instance, "UI/PAUSE/RESUME");
+        private static void Postfix(PauseMenu __instance) => MenuButtons.AddAfter(__instance, "UI/PAUSE/RESUME");
     }
 
     internal static class MenuButtons
     {
-        public static void AddAfterFirst(GeneratedMenu menu, string placeholderTerm)
+        public static void AddAfter(GeneratedMenu menu, string term)
         {
-            ButtonWidget button = menu.AddButton(placeholderTerm, MultiplayerScreen.Open);
-            button.SetNonLocalizedLabel("Multiplayer");
+            // The term only satisfies AddButton; SetPlainLabel replaces it.
+            ButtonWidget button = menu.AddButton(term, MultiplayerScreen.Open);
+            GameUi.SetPlainLabel(button, "Multiplayer");
             button.SetHoverAudio(FabricID.uiHover);
-            button.transform.SetSiblingIndex(1); // right below Play / Resume
+            GameUi.PlaceAfter(menu, button, term);
             ModLog.Info($"Added Multiplayer button to {menu.GetType().Name}");
         }
     }

@@ -8,8 +8,8 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// First multiplayer slice: the lobby host is the defender playing the battle, guests are masterminds
-    /// who decide when the host's Viking waves launch. Nothing about the island itself is synced yet.
+    /// Lobby-level game flow: pings, the defender's battle status, wave requests and the event log.
+    /// The defender's game runs the battle; the mastermind decides when (and later what) Vikings attack.
     /// </summary>
     internal class MultiplayerGame : MonoBehaviour
     {
@@ -19,16 +19,16 @@ namespace BadNorthMP.Net
 
         public static MultiplayerGame Instance { get; private set; }
 
-        /// <summary>Host option: while a mastermind is connected, waves only launch when they say so.</summary>
+        /// <summary>Defender option: while a mastermind is connected, waves only launch when they say so.</summary>
         public bool mastermindControlEnabled = true;
 
         /// <summary>Read by the Raid.MaybeLaunchWaves patch.</summary>
         public static bool MastermindControlsWaves =>
-            Instance && Instance.mastermindControlEnabled && Session.IsHost && Session.Members().Count > 1;
+            Instance && Instance.mastermindControlEnabled && Roles.IsDefender && Roles.HasMastermind;
 
-        /// <summary>Latest battle snapshot from the host (guests only).</summary>
-        public IslandStatus HostStatus { get; private set; }
-        public bool HasHostStatus { get; private set; }
+        /// <summary>Latest battle snapshot from the defender (mastermind only).</summary>
+        public IslandStatus DefenderStatus { get; private set; }
+        public bool HasDefenderStatus { get; private set; }
 
         public IEnumerable<string> RecentEvents(int count)
         {
@@ -41,7 +41,8 @@ namespace BadNorthMP.Net
         private readonly Dictionary<ulong, float> pingMs = new Dictionary<ulong, float>();
         private readonly List<CSteamID> knownMembers = new List<CSteamID>();
         private readonly Queue<string> events = new Queue<string>();
-        private CSteamID knownHost = CSteamID.Nil;
+        private CSteamID knownOwner = CSteamID.Nil;
+        private CSteamID lastMastermind = CSteamID.Nil;
         private float nextPing;
         private float nextStatus;
 
@@ -49,8 +50,35 @@ namespace BadNorthMP.Net
 
         private void Start()
         {
-            Session.MessageReceived += OnMessage;
+            Session.MessageReceived += Router.Dispatch;
             Session.LobbyChanged += OnLobbyChanged;
+            Session.LobbyDataChanged += OnRolesMaybeChanged;
+
+            Router.On(MsgType.Ping, (sender, r) =>
+            {
+                float sentAt = r.ReadSingle();
+                Session.Send(sender, Packet.Build(MsgType.Pong, w => w.Write(sentAt)), reliable: false);
+            });
+            Router.On(MsgType.Pong, (sender, r) =>
+                pingMs[sender.m_SteamID] = (Time.realtimeSinceStartup - r.ReadSingle()) * 1000f);
+            Router.On(MsgType.Chat, (sender, r) => AddEvent($"{SteamSession.NameOf(sender)}: {r.ReadString()}"));
+            Router.On(MsgType.Status, (sender, r) =>
+            {
+                if (sender != Roles.DefenderId)
+                    return;
+                DefenderStatus = IslandStatus.Read(r);
+                HasDefenderStatus = true;
+            });
+            Router.On(MsgType.WaveRequest, (sender, r) =>
+            {
+                if (Roles.IsDefender && sender == Roles.MastermindId)
+                    HandleWaveRequest(sender);
+            });
+            Router.On(MsgType.Notice, (sender, r) =>
+            {
+                if (sender == Roles.DefenderId)
+                    AddEvent(r.ReadString());
+            });
         }
 
         private void Update()
@@ -64,11 +92,11 @@ namespace BadNorthMP.Net
                 nextPing = now + PingInterval;
                 Session.Broadcast(Packet.Build(MsgType.Ping, w => w.Write(now)), reliable: false);
             }
-            if (Session.IsHost && now >= nextStatus)
+            if (Roles.IsDefender && Roles.HasMastermind && now >= nextStatus)
             {
                 nextStatus = now + StatusInterval;
                 IslandStatus status = BuildStatus();
-                Session.Broadcast(Packet.Build(MsgType.Status, status.Write), reliable: false);
+                Session.Send(Roles.MastermindId, Packet.Build(MsgType.Status, status.Write), reliable: false);
             }
         }
 
@@ -79,10 +107,8 @@ namespace BadNorthMP.Net
 
         public void RequestWave()
         {
-            if (Session.IsHost)
-                HandleWaveRequest(Session.Me);
-            else
-                Session.Send(Session.Owner, Packet.Build(MsgType.WaveRequest));
+            if (Roles.IsMastermind)
+                Session.Send(Roles.DefenderId, Packet.Build(MsgType.WaveRequest));
         }
 
         public void SendChat(string text)
@@ -96,27 +122,28 @@ namespace BadNorthMP.Net
             AddEvent($"{SteamFriends.GetPersonaName()}: {text}");
         }
 
-        // ---- Networking ----------------------------------------------------------------------
+        // ---- Lobby events --------------------------------------------------------------------
 
         private void OnLobbyChanged()
         {
             if (!Session.InLobby)
             {
-                knownHost = CSteamID.Nil;
-                HasHostStatus = false;
+                knownOwner = CSteamID.Nil;
+                HasDefenderStatus = false;
                 pingMs.Clear();
                 knownMembers.Clear();
+                lastMastermind = CSteamID.Nil;
                 return;
             }
 
             CSteamID owner = Session.Owner;
-            if (knownHost == CSteamID.Nil)
+            if (knownOwner == CSteamID.Nil)
             {
-                knownHost = owner;
+                knownOwner = owner;
             }
-            else if (owner != knownHost && !Session.IsHost)
+            else if (owner != knownOwner && !Session.IsHost)
             {
-                // Host migration isn't supported: the battle lives on the original host's machine.
+                // Host migration isn't supported: lobby settings live with the original owner.
                 Session.Leave("The host left the game");
                 AddEvent("The host left the game");
                 return;
@@ -126,7 +153,7 @@ namespace BadNorthMP.Net
             foreach (CSteamID member in members)
             {
                 if (!knownMembers.Contains(member) && member != Session.Me)
-                    Announce($"{SteamSession.NameOf(member)} joined as {(member == owner ? "defender" : "mastermind")}");
+                    Announce($"{SteamSession.NameOf(member)} joined");
             }
             foreach (CSteamID member in knownMembers)
             {
@@ -135,56 +162,23 @@ namespace BadNorthMP.Net
             }
             knownMembers.Clear();
             knownMembers.AddRange(members);
+
+            Roles.OnMembersChanged();
+            OnRolesMaybeChanged();
         }
 
-        /// <summary>Adds to the event list and, during a battle, shows the game's notification banner.</summary>
-        private void Announce(string text)
+        private void OnRolesMaybeChanged()
         {
-            AddEvent(text);
-            GameNotify.Post(text);
+            CSteamID mastermind = Roles.MastermindId;
+            if (mastermind == lastMastermind || mastermind == CSteamID.Nil)
+                return;
+            lastMastermind = mastermind;
+            AddEvent(Roles.IsMastermind
+                ? "You are the mastermind."
+                : $"You defend. {SteamSession.NameOf(Roles.MastermindId)} is the mastermind.");
         }
 
-        private void OnMessage(CSteamID sender, byte[] data)
-        {
-            using (var reader = new BinaryReader(new MemoryStream(data)))
-            {
-                var type = (MsgType)reader.ReadByte();
-                bool fromHost = sender == Session.Owner;
-                switch (type)
-                {
-                    case MsgType.Ping:
-                        float sentAt = reader.ReadSingle();
-                        Session.Send(sender, Packet.Build(MsgType.Pong, w => w.Write(sentAt)), reliable: false);
-                        break;
-
-                    case MsgType.Pong:
-                        pingMs[sender.m_SteamID] = (Time.realtimeSinceStartup - reader.ReadSingle()) * 1000f;
-                        break;
-
-                    case MsgType.Chat:
-                        AddEvent($"{SteamSession.NameOf(sender)}: {reader.ReadString()}");
-                        break;
-
-                    case MsgType.Status:
-                        if (fromHost)
-                        {
-                            HostStatus = IslandStatus.Read(reader);
-                            HasHostStatus = true;
-                        }
-                        break;
-
-                    case MsgType.WaveRequest:
-                        if (Session.IsHost)
-                            HandleWaveRequest(sender);
-                        break;
-
-                    case MsgType.Notice:
-                        if (fromHost)
-                            AddEvent(reader.ReadString());
-                        break;
-                }
-            }
-        }
+        // ---- Defender side -------------------------------------------------------------------
 
         private void HandleWaveRequest(CSteamID requester)
         {
@@ -196,7 +190,7 @@ namespace BadNorthMP.Net
                 Announce(notice);
             else
                 AddEvent(notice);
-            Session.Broadcast(Packet.Build(MsgType.Notice, w => w.Write(notice)));
+            Session.Send(requester, Packet.Build(MsgType.Notice, w => w.Write(notice)));
         }
 
         private static IslandStatus BuildStatus()
@@ -218,7 +212,16 @@ namespace BadNorthMP.Net
             return status;
         }
 
-        private void AddEvent(string text)
+        // ---- Event log -----------------------------------------------------------------------
+
+        /// <summary>Adds to the event list and, during a battle, shows the game's notification banner.</summary>
+        public void Announce(string text)
+        {
+            AddEvent(text);
+            GameNotify.Post(text);
+        }
+
+        public void AddEvent(string text)
         {
             events.Enqueue(text);
             while (events.Count > MaxEvents)
