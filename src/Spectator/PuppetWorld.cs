@@ -60,6 +60,9 @@ namespace BadNorthMP.Spectator
         private static readonly Dictionary<int, Squad> squads = new Dictionary<int, Squad>();
         private static readonly Dictionary<int, Puppet> puppets = new Dictionary<int, Puppet>();
         private static readonly Dictionary<int, ShipPuppet> shipPuppets = new Dictionary<int, ShipPuppet>();
+        private static readonly Dictionary<int, ShipPuppet> projectilePuppets = new Dictionary<int, ShipPuppet>();
+        private static readonly Dictionary<string, GameObject> projectilePrefabs = new Dictionary<string, GameObject>();
+        private static readonly Dictionary<string, ReusableEffect> effects = new Dictionary<string, ReusableEffect>();
         private static readonly Dictionary<string, Agent> prefabs = new Dictionary<string, Agent>();
         private static readonly HashSet<string> warned = new HashSet<string>();
         private static List<KeyValuePair<float, byte[]>> replay;
@@ -83,7 +86,9 @@ namespace BadNorthMP.Spectator
             }
             // Transforms are stale by the time the island loads; only keep the events.
             var type = (MsgType)packet[0];
-            if (type != MsgType.Snapshot && type != MsgType.ShipSnapshot && buffered.Count < MaxBuffered)
+            bool transient = type == MsgType.Snapshot || type == MsgType.ShipSnapshot || type == MsgType.ProjectileSnapshot
+                || type == MsgType.Sound || type == MsgType.Effect;
+            if (!transient && buffered.Count < MaxBuffered)
                 buffered.Enqueue(packet);
         }
 
@@ -100,6 +105,9 @@ namespace BadNorthMP.Spectator
             squads.Clear();
             puppets.Clear();
             shipPuppets.Clear();
+            projectilePuppets.Clear();
+            projectilePrefabs.Clear();
+            effects.Clear();
             prefabs.Clear();
             warned.Clear();
             replay = null;
@@ -130,6 +138,8 @@ namespace BadNorthMP.Spectator
             foreach (Puppet p in puppets.Values)
                 ApplyAgent(p);
             foreach (ShipPuppet s in shipPuppets.Values)
+                ApplyShip(s);
+            foreach (ShipPuppet s in projectilePuppets.Values)
                 ApplyShip(s);
         }
 
@@ -165,6 +175,11 @@ namespace BadNorthMP.Spectator
                         case MsgType.ShipSpawn: OnShipSpawn(r.ReadInt32(), r.ReadString()); break;
                         case MsgType.ShipGone: OnShipGone(r.ReadInt32()); break;
                         case MsgType.ShipSnapshot: OnShipSnapshot(r); break;
+                        case MsgType.ProjectileSpawn: OnProjectileSpawn(r.ReadInt32(), r.ReadString()); break;
+                        case MsgType.ProjectileGone: OnProjectileGone(r.ReadInt32()); break;
+                        case MsgType.ProjectileSnapshot: OnProjectileSnapshot(r); break;
+                        case MsgType.Sound: OnSound(r); break;
+                        case MsgType.Effect: OnEffect(r); break;
                     }
                 }
             }
@@ -279,7 +294,7 @@ namespace BadNorthMP.Spectator
             {
                 int id = r.ReadInt32();
                 Vector3 pos = r.ReadVector3();
-                float yaw = r.ReadInt16() / 100f;
+                Quaternion rot = r.ReadRotation();
                 float health = r.ReadByte() / 255f;
                 int anim = r.ReadInt32();
                 float animTime = r.ReadUInt16() / 65535f;
@@ -287,7 +302,7 @@ namespace BadNorthMP.Spectator
                 if (!puppets.TryGetValue(id, out Puppet p) || !p.agent)
                     continue;
                 p.agent.health = health * p.agent.maxHealth;
-                p.Add(new Sample { time = time, pos = pos, rot = Quaternion.Euler(0f, yaw, 0f), anim = anim, animTime = animTime });
+                p.Add(new Sample { time = time, pos = pos, rot = rot, anim = anim, animTime = animTime });
             }
         }
 
@@ -343,6 +358,161 @@ namespace BadNorthMP.Spectator
             }
         }
 
+        // ---- Projectiles: visual copies following the defender's flight path ------------------
+
+        private static void OnProjectileSpawn(int id, string prefabName)
+        {
+            GameObject prefab = FindProjectilePrefab(prefabName);
+            if (!prefab)
+            {
+                WarnOnce("projectile " + prefabName, $"Can't mirror projectile '{prefabName}'");
+                return;
+            }
+            GameObject go = Instantiate(prefab, GameAccess.CurrentIsland.runContainer);
+            go.SetActive(false);
+            // Visual only: no flight logic, pooling, physics or hits.
+            foreach (MonoBehaviour behaviour in go.GetComponentsInChildren<MonoBehaviour>(true))
+                behaviour.enabled = false;
+            foreach (Collider c in go.GetComponentsInChildren<Collider>(true))
+                c.enabled = false;
+            foreach (Rigidbody body in go.GetComponentsInChildren<Rigidbody>(true))
+                body.isKinematic = true;
+            projectilePuppets[id] = new ShipPuppet { go = go };
+        }
+
+        private static void OnProjectileGone(int id)
+        {
+            if (projectilePuppets.TryGetValue(id, out ShipPuppet p))
+            {
+                projectilePuppets.Remove(id);
+                if (p.go)
+                    Destroy(p.go);
+            }
+        }
+
+        private static void OnProjectileSnapshot(BinaryReader r)
+        {
+            float time = r.ReadSingle();
+            latestStreamTime = Mathf.Max(latestStreamTime, time);
+            int count = r.ReadInt16();
+            for (int i = 0; i < count; i++)
+            {
+                int id = r.ReadInt32();
+                Vector3 pos = r.ReadVector3();
+                Quaternion rot = r.ReadRotation();
+                if (projectilePuppets.TryGetValue(id, out ShipPuppet p) && p.go)
+                    p.Add(new Sample { time = time, pos = pos, rot = rot });
+            }
+        }
+
+        private static GameObject FindProjectilePrefab(string name)
+        {
+            if (projectilePrefabs.TryGetValue(name, out GameObject found) && found)
+                return found;
+            // Templates are the inactive, unparented pool sources (and prefab assets) with this exact name.
+            foreach (SelfPoolingPrefab candidate in Resources.FindObjectsOfTypeAll<SelfPoolingPrefab>())
+                if (candidate && candidate.name == name) { found = candidate.gameObject; break; }
+            if (!found)
+                foreach (PoolablePrefab candidate in Resources.FindObjectsOfTypeAll<PoolablePrefab>())
+                    if (candidate && candidate.name == name) { found = candidate.gameObject; break; }
+            projectilePrefabs[name] = found;
+            return found;
+        }
+
+        // ---- Sounds and effects ----------------------------------------------------------------
+
+        private static readonly List<KeyValuePair<float, GameObject>> soundAnchors = new List<KeyValuePair<float, GameObject>>();
+
+        private static void OnSound(BinaryReader r)
+        {
+            byte target = r.ReadByte();
+            int targetId = r.ReadInt32();
+            Vector3 pos = r.ReadVector3();
+            bool byName = r.ReadBoolean();
+            string name = byName ? r.ReadString() : null;
+            int eventId = byName ? 0 : r.ReadInt32();
+            int action = r.ReadInt32();
+
+            GameObject parent = null;
+            switch (target)
+            {
+                case SoundTarget.Agent:
+                    if (puppets.TryGetValue(targetId, out Puppet p) && p.agent)
+                        parent = p.agent.gameObject;
+                    break;
+                case SoundTarget.Ship:
+                    if (shipPuppets.TryGetValue(targetId, out ShipPuppet s) && s.go)
+                        parent = s.go;
+                    break;
+                case SoundTarget.House:
+                    Island island = GameAccess.CurrentIsland;
+                    if (island.village && targetId < island.village.houses.Length)
+                        parent = island.village.houses[targetId].gameObject;
+                    break;
+            }
+            if (!parent && target != SoundTarget.Global)
+                parent = SoundAnchor(pos);
+
+            if (parent)
+            {
+                if (byName)
+                    FabricWrapper.PostEvent(name, action < 0 ? Fabric.EventAction.PlaySound : (Fabric.EventAction)action, parent);
+                else
+                    FabricWrapper.PostEvent(eventId, action < 0 ? Fabric.EventAction.PlaySound : (Fabric.EventAction)action, parent);
+            }
+            else if (byName)
+            {
+                if (action < 0) FabricWrapper.PostEvent(name);
+                else FabricWrapper.PostEvent(name, (Fabric.EventAction)action);
+            }
+        }
+
+        /// <summary>A short-lived object to play a positional sound from, when it has no mirrored owner.</summary>
+        private static GameObject SoundAnchor(Vector3 pos)
+        {
+            for (int i = soundAnchors.Count - 1; i >= 0; i--)
+            {
+                if (soundAnchors[i].Key < Time.unscaledTime)
+                {
+                    if (soundAnchors[i].Value)
+                        Destroy(soundAnchors[i].Value);
+                    soundAnchors.RemoveAt(i);
+                }
+            }
+            var anchor = new GameObject("BNMP Sound");
+            anchor.transform.position = pos;
+            soundAnchors.Add(new KeyValuePair<float, GameObject>(Time.unscaledTime + 10f, anchor));
+            return anchor;
+        }
+
+        private static void OnEffect(BinaryReader r)
+        {
+            string name = r.ReadString();
+            Vector3 pos = r.ReadVector3();
+            Quaternion rot = r.ReadRotation();
+            Vector3 scale = r.ReadVector3();
+            bool onNavMesh = r.ReadBoolean();
+
+            if (!effects.TryGetValue(name, out ReusableEffect effect) || !effect)
+            {
+                effect = null;
+                foreach (ReusableEffect candidate in Resources.FindObjectsOfTypeAll<ReusableEffect>())
+                    if (candidate && candidate.name == name) { effect = candidate; break; }
+                effects[name] = effect;
+                if (!effect)
+                    WarnOnce("effect " + name, $"Can't mirror effect '{name}'");
+            }
+            if (!effect)
+                return;
+
+            Island island = GameAccess.CurrentIsland;
+            var navPos = onNavMesh ? new NavPos(island.navMesh, pos) : default(NavPos);
+            if (onNavMesh && navPos.valid)
+                effect.PlayAt(navPos, rot, scale); // also stamps ground decals (blood)
+            else
+                effect.PlayAt(pos, rot, scale);
+        }
+
         private static void OnHouseState(byte index, byte flags)
         {
             Island island = GameAccess.CurrentIsland;
@@ -369,10 +539,7 @@ namespace BadNorthMP.Spectator
             if (!p.agent.gameObject.activeSelf)
                 p.agent.gameObject.SetActive(true);
             if (p.agent.deadState != null && p.agent.deadState.active)
-            {
-                PlayFrame(p.animator, s); // keep the death animation going, but leave it where it fell
-                return;
-            }
+                return; // the native death animation plays from where it fell
             Transform tr = p.agent.transform;
             tr.position = s.pos;
             tr.rotation = s.rot;

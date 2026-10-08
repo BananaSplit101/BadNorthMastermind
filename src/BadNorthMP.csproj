@@ -31,6 +31,7 @@
     <Reference Include="System" HintPath="$(ManagedDir)\System.dll" Private="false" />
     <Reference Include="System.Core" HintPath="$(ManagedDir)\System.Core.dll" Private="false" />
     <Reference Include="Assembly-CSharp" HintPath="$(ManagedDir)\Assembly-CSharp.dll" Private="false" />
+    <Reference Include="Fabric.Core" HintPath="$(ManagedDir)\Fabric.Core.dll" Private="false" />
     <Reference Include="UnityEngine" HintPath="$(ManagedDir)\UnityEngine.dll" Private="false" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(ManagedDir)\UnityEngine.CoreModule.dll" Private="false" />
     <Reference Include="UnityEngine.IMGUIModule" HintPath="$(ManagedDir)\UnityEngine.IMGUIModule.dll" Private="false" />

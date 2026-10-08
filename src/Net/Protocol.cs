@@ -19,11 +19,21 @@ namespace BadNorthMP.Net
         AgentSpawned = 11,// int agentId: became visible/active (Agent.Spawn)
         AgentDied = 12,   // int agentId: started dying
         AgentGone = 13,   // int agentId, bool died: removed from the world
-        Snapshot = 14,    // float streamTime, short count, then per agent: int id, Vector3 pos, short yaw, byte health, int anim, ushort animTime
+        Snapshot = 14,    // float streamTime, short count, then per agent: int id, Vector3 pos, short4 rot, byte health, int anim, ushort animTime
         HouseState = 15,  // byte houseIndex, byte flags (HouseFlags)
         ShipSpawn = 16,   // int shipId, string prefabName
         ShipGone = 17,    // int shipId
         ShipSnapshot = 18,// float streamTime, short count, then per ship: int id, Vector3 pos, Quaternion rot, int anim, ushort animTime
+        ProjectileSpawn = 19,    // int id, string prefabName (arrows, thrown axes, torches, bombs)
+        ProjectileGone = 20,     // int id
+        ProjectileSnapshot = 21, // float streamTime, short count, then per projectile: int id, Vector3 pos, short4 rot
+        Sound = 22,       // byte target (SoundTarget), int targetId, Vector3 pos, bool byName, string name | int id, int action (-1 = default)
+        Effect = 23,      // string effectName, Vector3 pos, short4 rot, Vector3 scale, bool onNavMesh
+    }
+
+    internal static class SoundTarget
+    {
+        public const byte Position = 0, Agent = 1, Ship = 2, House = 3, Global = 4;
     }
 
     internal static class HouseFlags
@@ -38,6 +48,22 @@ namespace BadNorthMP.Net
             w.Write(v.x);
             w.Write(v.y);
             w.Write(v.z);
+        }
+
+        /// <summary>Unit quaternion as four shorts (8 bytes instead of 16).</summary>
+        public static void WriteRotation(this BinaryWriter w, UnityEngine.Quaternion q)
+        {
+            w.Write((short)(q.x * 32767f));
+            w.Write((short)(q.y * 32767f));
+            w.Write((short)(q.z * 32767f));
+            w.Write((short)(q.w * 32767f));
+        }
+
+        public static UnityEngine.Quaternion ReadRotation(this BinaryReader r)
+        {
+            var q = new UnityEngine.Quaternion(r.ReadInt16() / 32767f, r.ReadInt16() / 32767f, r.ReadInt16() / 32767f, r.ReadInt16() / 32767f);
+            float length = UnityEngine.Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+            return length > 0.0001f ? new UnityEngine.Quaternion(q.x / length, q.y / length, q.z / length, q.w / length) : UnityEngine.Quaternion.identity;
         }
 
         public static UnityEngine.Vector3 ReadVector3(this BinaryReader r) =>
