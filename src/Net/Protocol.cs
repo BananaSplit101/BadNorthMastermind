@@ -23,7 +23,11 @@ namespace BadNorthMP.Net
         HouseState = 15,  // byte houseIndex, byte flags (HouseFlags)
         ShipSpawn = 16,   // int shipId, string prefabName
         ShipGone = 17,    // int shipId
-        ShipSnapshot = 18,// float streamTime, short count, then per ship: int id, Vector3 pos, Quaternion rot, int anim, ushort animTime
+        ShipSnapshot = 18,// (unused since ships are simulated natively on both sides)
+        LandingSpawned = 19, // int wave, int group, int landing, short count, int[] agentIds (creation order inside Landing.Spawn)
+        SquadNavSpot = 20,   // int squadId, int navSpotIndex: the squad's current position on the island
+        WaveLaunch = 21,     // int waveIndex: Raid.BeginNextWave on the defender
+        BattlePhase = 22,    // byte phase (1 = running): the fight has started (music, ambience)
     }
 
     internal static class HouseFlags

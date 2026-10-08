@@ -174,7 +174,7 @@ namespace BadNorthMP.Spectator
             Island island = Singleton<IslandGameplayManager>.instance.island;
             return $"'{island.name}' level={island.levelNode.index} english={island.english.agents.Count} " +
                    $"vikings={island.vikings.agents.Count} navSpots={island.navSpotter.navSpots.Count} " +
-                   $"houses={(island.village ? island.village.houses.Length : 0)} camera={(bool)Singleton<LevelCamera>.instance} puppets={PuppetWorld.PuppetCount} ships={PuppetWorld.ShipCount}";
+                   $"houses={(island.village ? island.village.houses.Length : 0)} camera={(bool)Singleton<LevelCamera>.instance} puppets={PuppetWorld.PuppetCount}";
         }
 
         private static bool AtMainMenu()
