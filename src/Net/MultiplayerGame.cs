@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using Steamworks;
 using UnityEngine;
+using BadNorthMP.UI;
 using Voxels.TowerDefense;
 
 namespace BadNorthMP.Net
@@ -29,11 +30,16 @@ namespace BadNorthMP.Net
         public IslandStatus HostStatus { get; private set; }
         public bool HasHostStatus { get; private set; }
 
-        public IEnumerable<string> Events => events;
+        public IEnumerable<string> RecentEvents(int count)
+        {
+            var all = new List<string>(events);
+            return all.GetRange(Mathf.Max(0, all.Count - count), Mathf.Min(count, all.Count));
+        }
 
         private static SteamSession Session => SteamSession.Instance;
 
         private readonly Dictionary<ulong, float> pingMs = new Dictionary<ulong, float>();
+        private readonly List<CSteamID> knownMembers = new List<CSteamID>();
         private readonly Queue<string> events = new Queue<string>();
         private CSteamID knownHost = CSteamID.Nil;
         private float nextPing;
@@ -99,6 +105,7 @@ namespace BadNorthMP.Net
                 knownHost = CSteamID.Nil;
                 HasHostStatus = false;
                 pingMs.Clear();
+                knownMembers.Clear();
                 return;
             }
 
@@ -114,7 +121,27 @@ namespace BadNorthMP.Net
                 AddEvent("The host left the game");
                 return;
             }
-            AddEvent($"Players: {Session.Members().Count}");
+
+            List<CSteamID> members = Session.Members();
+            foreach (CSteamID member in members)
+            {
+                if (!knownMembers.Contains(member) && member != Session.Me)
+                    Announce($"{SteamSession.NameOf(member)} joined as {(member == owner ? "defender" : "mastermind")}");
+            }
+            foreach (CSteamID member in knownMembers)
+            {
+                if (!members.Contains(member))
+                    Announce($"{SteamSession.NameOf(member)} left");
+            }
+            knownMembers.Clear();
+            knownMembers.AddRange(members);
+        }
+
+        /// <summary>Adds to the event list and, during a battle, shows the game's notification banner.</summary>
+        private void Announce(string text)
+        {
+            AddEvent(text);
+            GameNotify.Post(text);
         }
 
         private void OnMessage(CSteamID sender, byte[] data)
@@ -165,7 +192,10 @@ namespace BadNorthMP.Net
             bool ok = GameAccess.TryLaunchNextWave(out string result);
             string notice = ok ? $"{name} {result}!" : $"{name}'s wave request refused: {result}";
             ModLog.Info(notice);
-            AddEvent(notice);
+            if (ok)
+                Announce(notice);
+            else
+                AddEvent(notice);
             Session.Broadcast(Packet.Build(MsgType.Notice, w => w.Write(notice)));
         }
 

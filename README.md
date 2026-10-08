@@ -3,7 +3,7 @@
 A work-in-progress asymmetric multiplayer mod for [Bad North: Jotunn Edition](https://store.steampowered.com/app/688420/).
 Defenders each command their own squads, while a "mastermind" player summons the Viking waves.
 
-**Status:** First playable slice. The host creates a Steam lobby and invites a friend. The host defends, and the friend is the mastermind who decides when the host's Viking waves launch (`Multiplayer` button, top-right). The island itself isn't synced yet, so the mastermind sees a status readout rather than the battle.
+**Status:** First playable slice. The host creates a Steam lobby and invites a friend. The host defends, and the friend is the mastermind who decides when the host's Viking waves launch (`Multiplayer` in the main menu and pause menu). The island itself isn't synced yet, so the mastermind sees a status readout rather than the battle.
 
 ## Making a test build for a friend
 ```

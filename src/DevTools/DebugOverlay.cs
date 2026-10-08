@@ -8,7 +8,7 @@ namespace BadNorthMP.DevTools
     {
         private const float StatusRefreshSeconds = 0.5f;
 
-        private bool visible = true;
+        private bool visible;
         private string status = "";
         private float nextStatusRefresh;
         private GUIStyle style;

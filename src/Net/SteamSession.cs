@@ -126,7 +126,8 @@ namespace BadNorthMP.Net
             SteamMatchmaking.LeaveLobby(Lobby);
             SteamFriends.SetRichPresence("connect", null);
             Lobby = CSteamID.Nil;
-            ModLog.Info("Left lobby: " + status);
+            // Include the caller: a host once left unexpectedly right after a guest joined.
+            ModLog.Info($"Left lobby: {status}\n{new System.Diagnostics.StackTrace(1, false)}");
             LobbyChanged();
         }
 

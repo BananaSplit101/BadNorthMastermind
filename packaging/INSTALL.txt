@@ -7,7 +7,7 @@ INSTALL
 2. Extract everything in this zip into that folder, so that winhttp.dll and the
    BepInEx folder sit next to BadNorth.exe.
 3. Start Bad North from Steam as normal. A "Multiplayer" button appears in the
-   top-right corner.
+   main menu (and in the pause menu during a battle).
 
 Make sure the Steam overlay is enabled (Steam > Settings > In Game), or the
 invite button can't open.
@@ -16,7 +16,7 @@ PLAYING
 - Host: click Multiplayer > Host game > Invite friend, pick your friend, then
   start or continue a campaign and go into a battle. You are the defender.
 - Friend: accept the invite in Steam (the game starts or joins automatically).
-  You are the mastermind: open the Multiplayer window and press
+  You are the mastermind: open Multiplayer from the main menu and press
   "Launch next wave" to send the next Viking wave at the host.
 - While a mastermind is connected, the host's waves only come when the
   mastermind launches them (the host can turn that off in the window).

@@ -11,7 +11,7 @@ namespace BadNorthMP
     {
         public const string Id = "com.bananasplit.badnorthmp";
         public const string Name = "Bad North Multiplayer";
-        public const string Version = "0.2.0";
+        public const string Version = "0.3.0";
 
         private void Awake()
         {
@@ -24,7 +24,7 @@ namespace BadNorthMP
 
             gameObject.AddComponent<SteamSession>();
             gameObject.AddComponent<MultiplayerGame>();
-            gameObject.AddComponent<MultiplayerMenu>();
+            gameObject.AddComponent<MultiplayerScreen>();
             gameObject.AddComponent<DebugKeys>();
             gameObject.AddComponent<DebugOverlay>();
 
