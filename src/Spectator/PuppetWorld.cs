@@ -9,35 +9,67 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Spectator
 {
     /// <summary>
-    /// Mastermind side: mirrors the defender's units on the spectator island. Squads and agents are created
+    /// Mastermind side: mirrors the defender's units and longships on the spectator island. Agents are created
     /// from the same prefabs through the game's own Squad.CreateAgent, but their AI never runs (AgentUpdater is
-    /// skipped); instead each puppet follows the defender's position/facing/animation snapshots.
+    /// skipped). Everything is rendered a little in the past (InterpolationDelay) so each frame can be
+    /// interpolated between two real snapshots, including the exact animation frame.
     /// </summary>
     internal class PuppetWorld : MonoBehaviour
     {
-        private const float FollowSharpness = 12f;
-        private const float SnapDistance = 3f;
+        private const float InterpolationDelay = 0.12f;
+        private const float ClockSnap = 0.5f;
         private const int MaxBuffered = 20000;
+        private const int MaxSamples = 6;
 
-        private class Puppet
+        private struct Sample
+        {
+            public float time;
+            public Vector3 pos;
+            public Quaternion rot;
+            public int anim;
+            public float animTime;
+        }
+
+        private class Mirror
+        {
+            public readonly List<Sample> samples = new List<Sample>(MaxSamples);
+            public Animator animator;
+
+            public void Add(Sample s)
+            {
+                if (samples.Count > 0 && s.time <= samples[samples.Count - 1].time)
+                    return; // out of order / duplicate
+                samples.Add(s);
+                if (samples.Count > MaxSamples)
+                    samples.RemoveAt(0);
+            }
+        }
+
+        private class Puppet : Mirror
         {
             public Agent agent;
-            public bool hasTarget;
-            public Vector3 targetPos;
-            public float targetYaw;
-            public int anim;
+            public Vector3 spawnPos;
+        }
+
+        private class ShipPuppet : Mirror
+        {
+            public GameObject go;
         }
 
         private static readonly Queue<byte[]> buffered = new Queue<byte[]>();
         private static readonly Dictionary<int, Squad> squads = new Dictionary<int, Squad>();
         private static readonly Dictionary<int, Puppet> puppets = new Dictionary<int, Puppet>();
+        private static readonly Dictionary<int, ShipPuppet> shipPuppets = new Dictionary<int, ShipPuppet>();
         private static readonly Dictionary<string, Agent> prefabs = new Dictionary<string, Agent>();
+        private static readonly HashSet<string> warned = new HashSet<string>();
         private static List<KeyValuePair<float, byte[]>> replay;
         private static int replayIndex;
         private static float replayStart = -1f;
-        private static readonly HashSet<string> warned = new HashSet<string>();
+        private static float latestStreamTime = -1f;
+        private static float renderTime = -1f;
 
         public static int PuppetCount => puppets.Count;
+        public static int ShipCount => shipPuppets.Count;
 
         private static bool Ready => SpectatorSession.Active && SpectatorSession.IslandReady();
 
@@ -49,8 +81,9 @@ namespace BadNorthMP.Spectator
                 Handle(packet);
                 return;
             }
-            // Positions are stale by the time the island loads; only keep the events.
-            if ((MsgType)packet[0] != MsgType.Snapshot && buffered.Count < MaxBuffered)
+            // Transforms are stale by the time the island loads; only keep the events.
+            var type = (MsgType)packet[0];
+            if (type != MsgType.Snapshot && type != MsgType.ShipSnapshot && buffered.Count < MaxBuffered)
                 buffered.Enqueue(packet);
         }
 
@@ -66,9 +99,12 @@ namespace BadNorthMP.Spectator
             buffered.Clear();
             squads.Clear();
             puppets.Clear();
+            shipPuppets.Clear();
             prefabs.Clear();
             warned.Clear();
             replay = null;
+            latestStreamTime = -1f;
+            renderTime = -1f;
         }
 
         private void Update()
@@ -88,7 +124,25 @@ namespace BadNorthMP.Spectator
                     Handle(replay[replayIndex++].Value);
             }
 
-            Follow(Time.unscaledDeltaTime);
+            AdvanceClock(Time.unscaledDeltaTime);
+            if (renderTime < 0)
+                return;
+            foreach (Puppet p in puppets.Values)
+                ApplyAgent(p);
+            foreach (ShipPuppet s in shipPuppets.Values)
+                ApplyShip(s);
+        }
+
+        /// <summary>Render clock: runs in real time, kept InterpolationDelay behind the newest snapshot.</summary>
+        private static void AdvanceClock(float dt)
+        {
+            if (latestStreamTime < 0)
+                return;
+            float target = latestStreamTime - InterpolationDelay;
+            if (renderTime < 0 || Mathf.Abs(renderTime - target) > ClockSnap)
+                renderTime = target;
+            else
+                renderTime += dt + (target - renderTime) * 0.05f; // drift gently toward the target
         }
 
         // ---- Message handling ----------------------------------------------------------------
@@ -108,6 +162,9 @@ namespace BadNorthMP.Spectator
                         case MsgType.AgentGone: OnAgentGone(r.ReadInt32(), r.ReadBoolean()); break;
                         case MsgType.Snapshot: OnSnapshot(r); break;
                         case MsgType.HouseState: OnHouseState(r.ReadByte(), r.ReadByte()); break;
+                        case MsgType.ShipSpawn: OnShipSpawn(r.ReadInt32(), r.ReadString()); break;
+                        case MsgType.ShipGone: OnShipGone(r.ReadInt32()); break;
+                        case MsgType.ShipSnapshot: OnShipSnapshot(r); break;
                     }
                 }
             }
@@ -160,24 +217,24 @@ namespace BadNorthMP.Spectator
             Agent agent = squad.CreateAgent(prefab, MakeNavPos(squad.faction.island, pos));
             if (isStandard && squad is EnglishSquad english)
                 english.standard = agent.GetComponent<Standard>();
-            // Hidden until the defender's agent is actually spawned (Vikings wait on their ships).
+            // Hidden until it shows up in a snapshot (Vikings appear when their ship sails in).
             agent.gameObject.SetActive(false);
-            puppets[agentId] = new Puppet { agent = agent, targetPos = pos };
+            puppets[agentId] = new Puppet { agent = agent, animator = agent.animator, spawnPos = pos };
         }
 
         private static void OnAgentSpawned(int id)
         {
-            if (!puppets.TryGetValue(id, out Puppet p) || !p.agent)
-                return;
-            p.agent.gameObject.SetActive(true);
-            p.agent.transform.position = p.targetPos;
-            p.agent.Spawn();
+            if (puppets.TryGetValue(id, out Puppet p) && p.agent)
+            {
+                p.agent.gameObject.SetActive(true);
+                p.agent.Spawn();
+            }
         }
 
         private static void OnAgentDied(int id)
         {
             if (puppets.TryGetValue(id, out Puppet p) && p.agent && p.agent.deadState != null)
-                p.agent.deadState.SetActive(true); // plays the death animation
+                p.agent.deadState.SetActive(true);
         }
 
         private static void OnAgentGone(int id, bool died)
@@ -206,6 +263,8 @@ namespace BadNorthMP.Spectator
 
         private static void OnSnapshot(BinaryReader r)
         {
+            float time = r.ReadSingle();
+            latestStreamTime = Mathf.Max(latestStreamTime, time);
             int count = r.ReadInt16();
             for (int i = 0; i < count; i++)
             {
@@ -214,25 +273,64 @@ namespace BadNorthMP.Spectator
                 float yaw = r.ReadInt16() / 100f;
                 float health = r.ReadByte() / 255f;
                 int anim = r.ReadInt32();
-                float animTime = r.ReadByte() / 255f;
+                float animTime = r.ReadUInt16() / 65535f;
 
                 if (!puppets.TryGetValue(id, out Puppet p) || !p.agent)
                     continue;
-                if (!p.hasTarget)
-                {
-                    p.agent.transform.position = pos;
-                    p.agent.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
-                }
-                p.hasTarget = true;
-                p.targetPos = pos;
-                p.targetYaw = yaw;
                 p.agent.health = health * p.agent.maxHealth;
+                p.Add(new Sample { time = time, pos = pos, rot = Quaternion.Euler(0f, yaw, 0f), anim = anim, animTime = animTime });
+            }
+        }
 
-                if (anim != 0 && anim != p.anim && p.agent.animator && p.agent.animator.HasState(0, anim))
-                {
-                    p.agent.animator.Play(anim, 0, animTime);
-                    p.anim = anim;
-                }
+        private static void OnShipSpawn(int id, string prefabName)
+        {
+            Island island = GameAccess.CurrentIsland;
+            Longship prefab = island.levelNode.possibleShips.Find(s => s && s.name == prefabName);
+            if (!prefab)
+            {
+                WarnOnce("ship " + prefabName, $"Can't mirror longship '{prefabName}'");
+                return;
+            }
+
+            GameObject go = Instantiate(prefab.gameObject, island.runContainer);
+            go.SetActive(false);
+            // A visual copy only: no sailing logic, no nav mesh, no collisions.
+            var longship = go.GetComponent<Longship>();
+            if (longship.navMeshFilter && longship.navMeshFilter.GetComponent<MeshRenderer>())
+                longship.navMeshFilter.GetComponent<MeshRenderer>().enabled = false;
+            if (longship.navigationMesh)
+                longship.navigationMesh.enabled = false;
+            longship.enabled = false;
+            foreach (Collider c in go.GetComponentsInChildren<Collider>(true))
+                c.enabled = false;
+            ExtraRenderers.InitializeAll(go.transform);
+            shipPuppets[id] = new ShipPuppet { go = go, animator = go.GetComponent<Animator>() };
+        }
+
+        private static void OnShipGone(int id)
+        {
+            if (shipPuppets.TryGetValue(id, out ShipPuppet s))
+            {
+                shipPuppets.Remove(id);
+                if (s.go)
+                    Destroy(s.go);
+            }
+        }
+
+        private static void OnShipSnapshot(BinaryReader r)
+        {
+            float time = r.ReadSingle();
+            latestStreamTime = Mathf.Max(latestStreamTime, time);
+            int count = r.ReadInt16();
+            for (int i = 0; i < count; i++)
+            {
+                int id = r.ReadInt32();
+                Vector3 pos = r.ReadVector3();
+                var rot = new Quaternion(r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                int anim = r.ReadInt32();
+                float animTime = r.ReadUInt16() / 65535f;
+                if (shipPuppets.TryGetValue(id, out ShipPuppet s) && s.go)
+                    s.Add(new Sample { time = time, pos = pos, rot = rot, anim = anim, animTime = animTime });
             }
         }
 
@@ -255,22 +353,75 @@ namespace BadNorthMP.Spectator
 
         // ---- Per-frame -----------------------------------------------------------------------
 
-        private static void Follow(float dt)
+        private static void ApplyAgent(Puppet p)
         {
-            float t = 1f - Mathf.Exp(-dt * FollowSharpness);
-            foreach (Puppet p in puppets.Values)
+            if (!p.agent || !SampleAt(p, out Sample s))
+                return;
+            if (!p.agent.gameObject.activeSelf)
+                p.agent.gameObject.SetActive(true);
+            if (p.agent.deadState != null && p.agent.deadState.active)
             {
-                if (!p.hasTarget || !p.agent || !p.agent.gameObject.activeInHierarchy)
-                    continue;
-                if (p.agent.deadState != null && p.agent.deadState.active)
-                    continue; // let the death animation play where it fell
-                Transform tr = p.agent.transform;
-                tr.position = (tr.position - p.targetPos).sqrMagnitude > SnapDistance * SnapDistance
-                    ? p.targetPos
-                    : Vector3.Lerp(tr.position, p.targetPos, t);
-                tr.rotation = Quaternion.Slerp(tr.rotation, Quaternion.Euler(0f, p.targetYaw, 0f), t);
-                p.agent.wPos = tr.position;
+                PlayFrame(p.animator, s); // keep the death animation going, but leave it where it fell
+                return;
             }
+            Transform tr = p.agent.transform;
+            tr.position = s.pos;
+            tr.rotation = s.rot;
+            p.agent.wPos = s.pos;
+            PlayFrame(p.animator, s);
+        }
+
+        private static void ApplyShip(ShipPuppet ship)
+        {
+            if (!ship.go || !SampleAt(ship, out Sample s))
+                return;
+            if (!ship.go.activeSelf)
+                ship.go.SetActive(true);
+            ship.go.transform.position = s.pos;
+            ship.go.transform.rotation = s.rot;
+            PlayFrame(ship.animator, s);
+        }
+
+        /// <summary>The mirror's state at renderTime, interpolated between the two snapshots around it.</summary>
+        private static bool SampleAt(Mirror m, out Sample result)
+        {
+            result = default(Sample);
+            List<Sample> samples = m.samples;
+            if (samples.Count == 0 || samples[0].time > renderTime)
+                return false;
+
+            int i = samples.Count - 1;
+            while (i > 0 && samples[i].time > renderTime)
+                i--;
+            Sample a = samples[i];
+            if (i == samples.Count - 1)
+            {
+                result = a; // newest data is older than the render time: hold it
+                return true;
+            }
+            Sample b = samples[i + 1];
+            float t = Mathf.InverseLerp(a.time, b.time, renderTime);
+            result.time = renderTime;
+            result.pos = Vector3.Lerp(a.pos, b.pos, t);
+            result.rot = Quaternion.Slerp(a.rot, b.rot, t);
+            if (a.anim == b.anim)
+            {
+                float end = b.animTime < a.animTime ? b.animTime + 1f : b.animTime; // looped around
+                result.anim = a.anim;
+                result.animTime = Mathf.Lerp(a.animTime, end, t) % 1f;
+            }
+            else
+            {
+                result.anim = t < 0.5f ? a.anim : b.anim;
+                result.animTime = t < 0.5f ? a.animTime : b.animTime;
+            }
+            return true;
+        }
+
+        private static void PlayFrame(Animator animator, Sample s)
+        {
+            if (s.anim != 0 && animator && animator.isActiveAndEnabled)
+                animator.Play(s.anim, 0, s.animTime);
         }
 
         // ---- Helpers -------------------------------------------------------------------------

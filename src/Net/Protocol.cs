@@ -19,8 +19,11 @@ namespace BadNorthMP.Net
         AgentSpawned = 11,// int agentId: became visible/active (Agent.Spawn)
         AgentDied = 12,   // int agentId: started dying
         AgentGone = 13,   // int agentId, bool died: removed from the world
-        Snapshot = 14,    // short count, then per agent: int id, Vector3 pos, short yaw, byte health, int anim, byte animTime
+        Snapshot = 14,    // float streamTime, short count, then per agent: int id, Vector3 pos, short yaw, byte health, int anim, ushort animTime
         HouseState = 15,  // byte houseIndex, byte flags (HouseFlags)
+        ShipSpawn = 16,   // int shipId, string prefabName
+        ShipGone = 17,    // int shipId
+        ShipSnapshot = 18,// float streamTime, short count, then per ship: int id, Vector3 pos, Quaternion rot, int anim, ushort animTime
     }
 
     internal static class HouseFlags

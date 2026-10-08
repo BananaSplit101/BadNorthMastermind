@@ -17,9 +17,12 @@ namespace BadNorthMP.Net
     internal static class BattleStream
     {
         public const int FileMagic = 0x504D4E42; // "BNMP"
-        public const int FileVersion = 2;
+        public const int FileVersion = 3;
 
         public static bool Active { get; private set; }
+
+        /// <summary>Seconds of real time since the battle started; snapshots are stamped with it.</summary>
+        public static float StreamTime => Time.unscaledTime - startTime;
 
         private static byte[] battleInfo;
         private static readonly List<byte[]> reliableHistory = new List<byte[]>();
