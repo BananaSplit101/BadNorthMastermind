@@ -77,6 +77,9 @@ namespace BadNorthMP.UI
             traverse.Field<Localize>("messageLocalize").Value.enabled = false;
             messageText = traverse.Field<Text>("message").Value;
 
+            if (Spectator.SpectatorSession.Active)
+                AddButton("Stop watching", Spectator.SpectatorSession.Instance.Stop);
+
             if (Session.Ready && !Session.InLobby)
             {
                 AddButton("Host game", Session.Host);
@@ -109,6 +112,8 @@ namespace BadNorthMP.UI
         {
             if (!Session.Ready)
                 return "wait";
+            if (Spectator.SpectatorSession.Active)
+                return "spectating";
             if (!Session.InLobby)
                 return "idle";
             return $"{(Session.IsHost ? "host" : "guest")}/{Session.Members().Count}/{(Roles.IsMastermind ? "mm" : "def")}";

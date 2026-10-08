@@ -17,6 +17,8 @@ namespace BadNorthMP.DevTools
                 Run("NextWave", LaunchNextWave);
             if (Input.GetKeyDown(KeyCode.F10))
                 Run("Dump", DumpIsland);
+            if (Input.GetKeyDown(KeyCode.F11))
+                Run("WatchLastBattle", () => Spectator.SpectatorSession.Instance.WatchLastBattle());
         }
 
         private static void Run(string name, System.Action action)

@@ -9,7 +9,9 @@ namespace BadNorthMP.Net
         Chat = 3,       // string text
         Status = 4,     // host -> all: IslandStatus
         WaveRequest = 5,// mastermind -> host: (empty)
-        Notice = 6,     // host -> all: string text (wave launched, request refused, ...)
+        Notice = 6,     // defender -> mastermind: string text (wave launched, request refused, ...)
+        BattleChunk = 7,// defender -> mastermind: one piece of a BattleInfo (int transferId, int index, int count, bytes)
+        BattleEnd = 8,  // defender -> mastermind: (empty) the defender left the island
     }
 
     /// <summary>Snapshot of the host's battle, shown to the mastermind.</summary>
