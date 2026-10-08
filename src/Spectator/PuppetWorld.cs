@@ -28,6 +28,8 @@ namespace BadNorthMP.Spectator
             public Quaternion rot;
             public int anim;
             public float animTime;
+            public bool moving;
+            public float speed;
         }
 
         private class Mirror
@@ -171,7 +173,8 @@ namespace BadNorthMP.Spectator
                         case MsgType.AgentDied: OnAgentDied(r.ReadInt32()); break;
                         case MsgType.AgentGone: OnAgentGone(r.ReadInt32(), r.ReadBoolean()); break;
                         case MsgType.Snapshot: OnSnapshot(r); break;
-                        case MsgType.HouseState: OnHouseState(r.ReadByte(), r.ReadByte()); break;
+                        case MsgType.HouseState: OnHouseState(r.ReadByte(), r.ReadByte(), r.ReadUInt16() / 1000f); break;
+                        case MsgType.Dust: Singleton<DustParticles>.instance.SpawnParticles(r.ReadVector3(), r.ReadVector3()); break;
                         case MsgType.ShipSpawn: OnShipSpawn(r.ReadInt32(), r.ReadString()); break;
                         case MsgType.ShipGone: OnShipGone(r.ReadInt32()); break;
                         case MsgType.ShipSnapshot: OnShipSnapshot(r); break;
@@ -298,11 +301,13 @@ namespace BadNorthMP.Spectator
                 float health = r.ReadByte() / 255f;
                 int anim = r.ReadInt32();
                 float animTime = r.ReadUInt16() / 65535f;
+                bool moving = r.ReadByte() != 0;
+                float speed = r.ReadUInt16() / 100f;
 
                 if (!puppets.TryGetValue(id, out Puppet p) || !p.agent)
                     continue;
                 p.agent.health = health * p.agent.maxHealth;
-                p.Add(new Sample { time = time, pos = pos, rot = rot, anim = anim, animTime = animTime });
+                p.Add(new Sample { time = time, pos = pos, rot = rot, anim = anim, animTime = animTime, moving = moving, speed = speed });
             }
         }
 
@@ -513,12 +518,14 @@ namespace BadNorthMP.Spectator
                 effect.PlayAt(pos, rot, scale);
         }
 
-        private static void OnHouseState(byte index, byte flags)
+        private static void OnHouseState(byte index, byte flags, float fire)
         {
             Island island = GameAccess.CurrentIsland;
             if (!island.village || index >= island.village.houses.Length)
                 return;
             House house = island.village.houses[index];
+            // The house's own update turns this into flames, smoke, light and fire audio.
+            Traverse.Create(house).Property("fire").SetValue(fire);
             if ((flags & HouseFlags.Burning) != 0 && !house.burning.active)
                 house.burning.SetActive(true);
             if ((flags & HouseFlags.Destroying) != 0 && !house.destroying.active)
@@ -544,7 +551,7 @@ namespace BadNorthMP.Spectator
             tr.position = s.pos;
             tr.rotation = s.rot;
             p.agent.wPos = s.pos;
-            PlayFrame(p.animator, s);
+            PlayFrame(p.animator, s, agentParams: true);
         }
 
         private static void ApplyShip(ShipPuppet ship)
@@ -580,6 +587,8 @@ namespace BadNorthMP.Spectator
             result.time = renderTime;
             result.pos = Vector3.Lerp(a.pos, b.pos, t);
             result.rot = Quaternion.Slerp(a.rot, b.rot, t);
+            result.moving = t < 0.5f ? a.moving : b.moving;
+            result.speed = Mathf.Lerp(a.speed, b.speed, t);
             if (a.anim == b.anim)
             {
                 float end = b.animTime < a.animTime ? b.animTime + 1f : b.animTime; // looped around
@@ -594,10 +603,20 @@ namespace BadNorthMP.Spectator
             return true;
         }
 
-        private static void PlayFrame(Animator animator, Sample s)
+        private static readonly int MovingParam = Animator.StringToHash("Moving");
+        private static readonly int SpeedParam = Animator.StringToHash("Speed");
+
+        private static void PlayFrame(Animator animator, Sample s, bool agentParams = false)
         {
-            if (s.anim != 0 && animator && animator.isActiveAndEnabled)
-                animator.Play(s.anim, 0, s.animTime);
+            if (s.anim == 0 || !animator || !animator.isActiveAndEnabled)
+                return;
+            if (agentParams)
+            {
+                // Without these the controller transitions straight back out of Walk.
+                animator.SetBool(MovingParam, s.moving);
+                animator.SetFloat(SpeedParam, s.speed);
+            }
+            animator.Play(s.anim, 0, s.animTime);
         }
 
         // ---- Helpers -------------------------------------------------------------------------
@@ -628,6 +647,26 @@ namespace BadNorthMP.Spectator
             if (warned.Add(key))
                 ModLog.Warn(message);
         }
+    }
+
+    // Animation events on the puppets' clips would run game actions (spawning a held torch, throwing,
+    // attack callbacks). The defender's real actions arrive as mirrored projectiles and effects instead.
+    [HarmonyPatch(typeof(Agent), nameof(Agent.StartThrow))]
+    internal static class SpectatorStartThrowPatch
+    {
+        private static bool Prefix() => !SpectatorSession.Active;
+    }
+
+    [HarmonyPatch(typeof(Agent), nameof(Agent.Throw))]
+    internal static class SpectatorThrowPatch
+    {
+        private static bool Prefix() => !SpectatorSession.Active;
+    }
+
+    [HarmonyPatch(typeof(Agent), nameof(Agent.DoAnimationAction))]
+    internal static class SpectatorAnimationActionPatch
+    {
+        private static bool Prefix() => !SpectatorSession.Active;
     }
 
     [HarmonyPatch(typeof(AgentUpdater), "Update")]

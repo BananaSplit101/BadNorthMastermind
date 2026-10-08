@@ -19,8 +19,8 @@ namespace BadNorthMP.Net
         AgentSpawned = 11,// int agentId: became visible/active (Agent.Spawn)
         AgentDied = 12,   // int agentId: started dying
         AgentGone = 13,   // int agentId, bool died: removed from the world
-        Snapshot = 14,    // float streamTime, short count, then per agent: int id, Vector3 pos, short4 rot, byte health, int anim, ushort animTime
-        HouseState = 15,  // byte houseIndex, byte flags (HouseFlags)
+        Snapshot = 14,    // float streamTime, short count, then per agent: int id, Vector3 pos, short4 rot, byte health, int anim, ushort animTime, byte moving, ushort speed (x100)
+        HouseState = 15,  // byte houseIndex, byte flags (HouseFlags), ushort fire (x1000)
         ShipSpawn = 16,   // int shipId, string prefabName
         ShipGone = 17,    // int shipId
         ShipSnapshot = 18,// float streamTime, short count, then per ship: int id, Vector3 pos, Quaternion rot, int anim, ushort animTime
@@ -29,6 +29,7 @@ namespace BadNorthMP.Net
         ProjectileSnapshot = 21, // float streamTime, short count, then per projectile: int id, Vector3 pos, short4 rot
         Sound = 22,       // byte target (SoundTarget), int targetId, Vector3 pos, bool byName, string name | int id, int action (-1 = default)
         Effect = 23,      // string effectName, Vector3 pos, short4 rot, Vector3 scale, bool onNavMesh
+        Dust = 24,        // Vector3 pos, Vector3 dir: footstep/landing dust (DustParticles)
     }
 
     internal static class SoundTarget

@@ -19,7 +19,10 @@ namespace BadNorthMP.Net
     {
         private const float SnapshotInterval = 0.05f;
         private const int MaxPacketBytes = 1100; // Steam unreliable P2P packets max out around 1200 bytes
-        private const int AgentRecordBytes = 4 + 12 + 8 + 1 + 4 + 2;
+        private const int AgentRecordBytes = 4 + 12 + 8 + 1 + 4 + 2 + 1 + 2;
+        private const float HouseFireStep = 0.03f;
+        private static readonly int MovingParam = Animator.StringToHash("Moving");
+        private static readonly int SpeedParam = Animator.StringToHash("Speed");
         private const int ShipRecordBytes = 4 + 12 + 16 + 4 + 2;
         private const int ProjectileRecordBytes = 4 + 12 + 8;
 
@@ -51,6 +54,7 @@ namespace BadNorthMP.Net
         private static readonly Dictionary<GameObject, TrackedProjectile> projectilesByObject = new Dictionary<GameObject, TrackedProjectile>();
         private static readonly List<TrackedProjectile> projectiles = new List<TrackedProjectile>();
         private static byte[] houseFlags = new byte[0];
+        private static float[] houseFire = new float[0];
         private static int nextId = 1;
         private static float nextSnapshot;
 
@@ -64,6 +68,7 @@ namespace BadNorthMP.Net
             projectilesByObject.Clear();
             projectiles.Clear();
             houseFlags = new byte[0];
+            houseFire = new float[0];
             nextId = 1;
         }
 
@@ -195,6 +200,16 @@ namespace BadNorthMP.Net
             }), reliable: false);
         }
 
+        public static void OnDust(Vector3 pos, Vector3 dir)
+        {
+            if (BattleStream.Active)
+                BattleStream.Send(Packet.Build(MsgType.Dust, w =>
+                {
+                    w.Write(pos);
+                    w.Write(dir);
+                }), reliable: false);
+        }
+
         public static void OnEffect(ReusableEffect effect, Vector3 pos, Quaternion rotation, Vector3 scale, bool onNavMesh)
         {
             if (!BattleStream.Active || !effect)
@@ -308,6 +323,10 @@ namespace BadNorthMP.Net
             w.WriteRotation(agent.transform.rotation); // full rotation: knocked-down units tumble
             w.Write((byte)Mathf.RoundToInt(Mathf.Clamp01(agent.healthFraction) * 255f));
             WriteAnimation(w, agent.animator);
+            // Body drives these; the animator's transitions depend on them (otherwise Walk falls back to Idle).
+            bool hasAnimator = agent.animator && agent.animator.isActiveAndEnabled;
+            w.Write((byte)(hasAnimator && agent.animator.GetBool(MovingParam) ? 1 : 0));
+            w.Write((ushort)Mathf.Clamp(Mathf.RoundToInt((hasAnimator ? agent.animator.GetFloat(SpeedParam) : 0f) * 100f), 0, 65535));
         }
 
         private static void WriteShip(BinaryWriter w, TrackedShip s)
@@ -354,7 +373,10 @@ namespace BadNorthMP.Net
                 return;
             House[] houses = island.village.houses;
             if (houseFlags.Length != houses.Length)
+            {
                 houseFlags = new byte[houses.Length];
+                houseFire = new float[houses.Length];
+            }
             for (int i = 0; i < houses.Length && i < 256; i++)
             {
                 House house = houses[i];
@@ -364,14 +386,18 @@ namespace BadNorthMP.Net
                 if (house.burning != null && house.burning.active) flags |= HouseFlags.Burning;
                 if (house.destroying != null && house.destroying.active) flags |= HouseFlags.Destroying;
                 if (house.pillaged != null && house.pillaged.active) flags |= HouseFlags.Pillaged;
-                if (flags == houseFlags[i])
+                float fire = house.fire;
+                bool fireChanged = Mathf.Abs(fire - houseFire[i]) >= HouseFireStep || (fire == 0f && houseFire[i] != 0f);
+                if (flags == houseFlags[i] && !fireChanged)
                     continue;
                 houseFlags[i] = flags;
+                houseFire[i] = fire;
                 byte index = (byte)i;
                 BattleStream.Send(Packet.Build(MsgType.HouseState, w =>
                 {
                     w.Write(index);
                     w.Write(flags);
+                    w.Write((ushort)Mathf.Clamp(Mathf.RoundToInt(fire * 1000f), 0, 65535));
                 }), reliable: true);
             }
         }
@@ -446,6 +472,16 @@ namespace BadNorthMP.Net
         {
             if (!Spectator.SpectatorSession.Active && navPos.valid)
                 DefenderTracker.OnEffect(__instance, navPos.wPos, rotation, scale, onNavMesh: true);
+        }
+    }
+
+    [HarmonyPatch(typeof(DustParticles), nameof(DustParticles.SpawnParticles), typeof(Vector3), typeof(Vector3))]
+    internal static class DefenderDustPatch
+    {
+        private static void Prefix(Vector3 pos, Vector3 dir)
+        {
+            if (!Spectator.SpectatorSession.Active)
+                DefenderTracker.OnDust(pos, dir);
         }
     }
 

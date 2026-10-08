@@ -17,12 +17,13 @@ namespace BadNorthMP.Net
     internal static class BattleStream
     {
         public const int FileMagic = 0x504D4E42; // "BNMP"
-        public const int FileVersion = 5;
+        public const int FileVersion = 6;
 
         public static bool Active { get; private set; }
 
         /// <summary>Seconds of real time since the battle started; snapshots are stamped with it.</summary>
-        public static float StreamTime => Time.unscaledTime - startTime;
+        /// <remarks>Game time, so a solo recording's selection slow-motion plays back at normal speed.</remarks>
+        public static float StreamTime => Time.time - startTime;
 
         private static byte[] battleInfo;
         private static readonly List<byte[]> reliableHistory = new List<byte[]>();
@@ -36,7 +37,7 @@ namespace BadNorthMP.Net
             battleInfo = info.ToBytes();
             reliableHistory.Clear();
             sentTo = CSteamID.Nil;
-            startTime = Time.unscaledTime;
+            startTime = Time.time;
             Active = true;
             try
             {
@@ -61,7 +62,7 @@ namespace BadNorthMP.Net
                 return;
             if (recording != null)
             {
-                recording.Write(Time.unscaledTime - startTime);
+                recording.Write(StreamTime);
                 recording.Write(packet.Length);
                 recording.Write(packet);
             }
