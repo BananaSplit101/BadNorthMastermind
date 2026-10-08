@@ -1,22 +1,111 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using BadNorthMP.Spectator;
 using HarmonyLib;
 using Steamworks;
+using UnityEngine;
 using Voxels.TowerDefense;
 
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Defender side: when a battle starts, send the mastermind what they need to load the same island.
-    /// Mastermind side: receive it and hand it to the spectator session.
+    /// Defender side of a battle: a stream of messages that is recorded to disk (for solo replays with F11)
+    /// and sent to the mastermind. A mastermind who arrives mid-battle gets the battle info plus every
+    /// reliable message so far, so their puppet world catches up.
     /// </summary>
+    internal static class BattleStream
+    {
+        public const int FileMagic = 0x504D4E42; // "BNMP"
+        public const int FileVersion = 2;
+
+        public static bool Active { get; private set; }
+
+        private static byte[] battleInfo;
+        private static readonly List<byte[]> reliableHistory = new List<byte[]>();
+        private static CSteamID sentTo = CSteamID.Nil;
+        private static BinaryWriter recording;
+        private static float startTime;
+
+        public static void Begin(BattleInfo info)
+        {
+            End();
+            battleInfo = info.ToBytes();
+            reliableHistory.Clear();
+            sentTo = CSteamID.Nil;
+            startTime = Time.unscaledTime;
+            Active = true;
+            try
+            {
+                recording = new BinaryWriter(File.Create(SpectatorSession.LastBattlePath));
+                recording.Write(FileMagic);
+                recording.Write(FileVersion);
+                recording.Write(battleInfo.Length);
+                recording.Write(battleInfo);
+            }
+            catch (Exception e)
+            {
+                ModLog.Warn($"Not recording this battle: {e.Message}");
+                recording = null;
+            }
+            DefenderTracker.Reset();
+            ModLog.Info($"Battle stream started ({battleInfo.Length / 1024} KB of battle info)");
+        }
+
+        public static void Send(byte[] packet, bool reliable)
+        {
+            if (!Active)
+                return;
+            if (recording != null)
+            {
+                recording.Write(Time.unscaledTime - startTime);
+                recording.Write(packet.Length);
+                recording.Write(packet);
+            }
+            if (reliable)
+                reliableHistory.Add(packet);
+            if (sentTo != CSteamID.Nil)
+                SteamSession.Instance.Send(sentTo, packet, reliable);
+        }
+
+        /// <summary>Every frame: catch up a newly arrived (or newly chosen) mastermind.</summary>
+        public static void Update()
+        {
+            if (!Active)
+                return;
+            CSteamID mastermind = Roles.IsDefender && Roles.HasMastermind ? Roles.MastermindId : CSteamID.Nil;
+            if (mastermind == sentTo)
+                return;
+            sentTo = mastermind;
+            if (mastermind == CSteamID.Nil)
+                return;
+            Chunker.Send(mastermind, battleInfo);
+            foreach (byte[] packet in reliableHistory)
+                SteamSession.Instance.Send(mastermind, packet, reliable: true);
+            ModLog.Info($"Sent battle to {SteamSession.NameOf(mastermind)} ({battleInfo.Length / 1024} KB + {reliableHistory.Count} events)");
+        }
+
+        public static void End()
+        {
+            if (!Active)
+                return;
+            if (sentTo != CSteamID.Nil)
+                SteamSession.Instance.Send(sentTo, Packet.Build(MsgType.BattleEnd));
+            Active = false;
+            sentTo = CSteamID.Nil;
+            reliableHistory.Clear();
+            if (recording != null)
+            {
+                recording.Close();
+                recording = null;
+            }
+            ModLog.Info("Battle stream ended");
+        }
+    }
+
+    /// <summary>Mastermind side: receive the battle info and hand battle messages to the puppet world.</summary>
     internal static class BattleSync
     {
-        /// <summary>The battle the defender is currently in (resent if a mastermind joins mid-battle).</summary>
-        private static byte[] currentBattle;
-        private static CSteamID sentTo = CSteamID.Nil;
-
         public static void Init()
         {
             Router.On(MsgType.BattleChunk, (sender, r) =>
@@ -25,51 +114,18 @@ namespace BadNorthMP.Net
                 if (payload == null || !Roles.IsMastermind || sender != Roles.DefenderId)
                     return;
                 ModLog.Info($"Received battle from {SteamSession.NameOf(sender)} ({payload.Length / 1024} KB)");
-                SpectatorSession.Instance.Watch(BattleInfo.FromBytes(payload));
+                SpectatorSession.Instance.Watch(BattleInfo.FromBytes(payload), null);
             });
             Router.On(MsgType.BattleEnd, (sender, r) =>
             {
                 if (sender == Roles.DefenderId)
                     SpectatorSession.Instance.Stop();
             });
-        }
-
-        /// <summary>Called every frame: (re)send the current battle to a newly arrived mastermind.</summary>
-        public static void Update()
-        {
-            if (currentBattle == null || !Roles.IsDefender || !Roles.HasMastermind)
-                return;
-            CSteamID mastermind = Roles.MastermindId;
-            if (mastermind == sentTo)
-                return;
-            sentTo = mastermind;
-            Chunker.Send(mastermind, currentBattle);
-            ModLog.Info($"Sent battle to {SteamSession.NameOf(mastermind)} ({currentBattle.Length / 1024} KB)");
-        }
-
-        public static void OnDefenderEnteredIsland(Island island)
-        {
-            try
+            Router.BattleMessage = (sender, packet) =>
             {
-                byte[] data = BattleInfo.Capture(island.levelNode.index).ToBytes();
-                File.WriteAllBytes(SpectatorSession.LastBattlePath, data); // for solo testing with F11
-                currentBattle = data;
-                sentTo = CSteamID.Nil; // Update() sends it
-            }
-            catch (Exception e)
-            {
-                ModLog.Error($"Couldn't capture the battle: {e}");
-            }
-        }
-
-        public static void OnDefenderLeftIsland()
-        {
-            if (currentBattle == null)
-                return;
-            currentBattle = null;
-            if (sentTo != CSteamID.Nil && Roles.IsDefender)
-                SteamSession.Instance.Send(sentTo, Packet.Build(MsgType.BattleEnd));
-            sentTo = CSteamID.Nil;
+                if (Roles.IsMastermind && sender == Roles.DefenderId)
+                    PuppetWorld.Receive(packet);
+            };
         }
     }
 
@@ -78,8 +134,16 @@ namespace BadNorthMP.Net
     {
         private static void Postfix(Island island)
         {
-            if (!SpectatorSession.Active)
-                BattleSync.OnDefenderEnteredIsland(island);
+            if (SpectatorSession.Active)
+                return;
+            try
+            {
+                BattleStream.Begin(BattleInfo.Capture(island.levelNode.index));
+            }
+            catch (Exception e)
+            {
+                ModLog.Error($"Couldn't capture the battle: {e}");
+            }
         }
     }
 
@@ -89,7 +153,7 @@ namespace BadNorthMP.Net
         private static void Prefix()
         {
             if (!SpectatorSession.Active)
-                BattleSync.OnDefenderLeftIsland();
+                BattleStream.End();
         }
     }
 }

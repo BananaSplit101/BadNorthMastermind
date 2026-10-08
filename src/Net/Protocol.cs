@@ -12,6 +12,33 @@ namespace BadNorthMP.Net
         Notice = 6,     // defender -> mastermind: string text (wave launched, request refused, ...)
         BattleChunk = 7,// defender -> mastermind: one piece of a BattleInfo (int transferId, int index, int count, bytes)
         BattleEnd = 8,  // defender -> mastermind: (empty) the defender left the island
+
+        // Battle stream (defender -> mastermind, also recorded to disk). Handled by Spectator.PuppetWorld.
+        SquadSpawn = 9,   // int squadId, byte side (0 English, 1 Viking), int heroIndex, Vector3 pos
+        AgentSpawn = 10,  // int agentId, int squadId, string prefabName, bool isStandard, Vector3 pos
+        AgentSpawned = 11,// int agentId: became visible/active (Agent.Spawn)
+        AgentDied = 12,   // int agentId: started dying
+        AgentGone = 13,   // int agentId, bool died: removed from the world
+        Snapshot = 14,    // short count, then per agent: int id, Vector3 pos, short yaw, byte health, int anim, byte animTime
+        HouseState = 15,  // byte houseIndex, byte flags (HouseFlags)
+    }
+
+    internal static class HouseFlags
+    {
+        public const byte Burning = 1, Destroying = 2, Pillaged = 4;
+    }
+
+    internal static class BinaryExtensions
+    {
+        public static void Write(this BinaryWriter w, UnityEngine.Vector3 v)
+        {
+            w.Write(v.x);
+            w.Write(v.y);
+            w.Write(v.z);
+        }
+
+        public static UnityEngine.Vector3 ReadVector3(this BinaryReader r) =>
+            new UnityEngine.Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
     }
 
     /// <summary>Snapshot of the host's battle, shown to the mastermind.</summary>

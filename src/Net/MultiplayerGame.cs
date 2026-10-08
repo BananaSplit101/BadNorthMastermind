@@ -84,9 +84,11 @@ namespace BadNorthMP.Net
 
         private void Update()
         {
+            // Recording runs even without a lobby, so the last battle can be replayed solo (F11).
+            BattleStream.Update();
+            DefenderTracker.Update();
             if (!Session.InLobby)
                 return;
-            BattleSync.Update();
 
             float now = Time.realtimeSinceStartup;
             if (now >= nextPing)

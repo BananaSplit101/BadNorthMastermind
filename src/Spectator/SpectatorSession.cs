@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using BadNorthMP.Net;
 using HarmonyLib;
@@ -27,6 +28,7 @@ namespace BadNorthMP.Spectator
         public static string LastBattlePath => Path.Combine(BepInEx.Paths.BepInExRootPath, "bnmp-lastbattle.bin");
 
         private BattleInfo pending;
+        private List<KeyValuePair<float, byte[]>> pendingReplay;
         private bool exitRequested;
         private bool exiting;
 
@@ -39,7 +41,8 @@ namespace BadNorthMP.Spectator
 
         // Testing aid: launch with --bnmp-autowatch to spectate the last battle as soon as the main menu
         // is up, log what loaded, and leave again after AutoWatchSeconds.
-        private const float AutoWatchSeconds = 20f;
+        private const float AutoWatchSeconds = 60f;
+        private float nextAutoLog;
         private bool autoWatchPending;
         private bool autoWatching;
         private float autoStopAt = -1f;
@@ -51,7 +54,7 @@ namespace BadNorthMP.Spectator
         }
 
         /// <summary>Queue a battle to watch. Starts as soon as the player is at the main menu.</summary>
-        public void Watch(BattleInfo info)
+        public void Watch(BattleInfo info, List<KeyValuePair<float, byte[]>> replay)
         {
             if (Active)
             {
@@ -59,6 +62,7 @@ namespace BadNorthMP.Spectator
                 return;
             }
             pending = info;
+            pendingReplay = replay;
             if (Singleton<CampaignManager>.instance && Singleton<CampaignManager>.instance.campaign)
                 MultiplayerGame.Instance.AddEvent("The defender started a battle. Go back to the main menu to watch it.");
         }
@@ -70,7 +74,27 @@ namespace BadNorthMP.Spectator
                 ModLog.Warn("No recorded battle yet. Play a battle first, then press F11 at the main menu.");
                 return;
             }
-            Watch(BattleInfo.FromBytes(File.ReadAllBytes(LastBattlePath)));
+            using (var r = new BinaryReader(File.OpenRead(LastBattlePath)))
+            {
+                if (r.ReadInt32() != BattleStream.FileMagic || r.ReadInt32() != BattleStream.FileVersion)
+                {
+                    ModLog.Warn("The recorded battle is from an older mod version. Play a battle again first.");
+                    return;
+                }
+                BattleInfo info = BattleInfo.FromBytes(r.ReadBytes(r.ReadInt32()));
+                var records = new List<KeyValuePair<float, byte[]>>();
+                long length = r.BaseStream.Length;
+                while (r.BaseStream.Position + 8 <= length)
+                {
+                    float time = r.ReadSingle();
+                    int size = r.ReadInt32();
+                    if (r.BaseStream.Position + size > length)
+                        break; // battle still being recorded, or cut short
+                    records.Add(new KeyValuePair<float, byte[]>(time, r.ReadBytes(size)));
+                }
+                ModLog.Info($"Replaying last battle: {records.Count} recorded messages");
+                Watch(info, records);
+            }
         }
 
         /// <summary>Leave the island and go back to the main menu.</summary>
@@ -79,6 +103,7 @@ namespace BadNorthMP.Spectator
             if (Active)
                 exitRequested = true;
             pending = null;
+            pendingReplay = null;
         }
 
         private void Update()
@@ -91,6 +116,9 @@ namespace BadNorthMP.Spectator
                 pending = null;
                 try
                 {
+                    PuppetWorld.Reset();
+                    PuppetWorld.SetReplay(pendingReplay);
+                    pendingReplay = null;
                     Begin(info);
                 }
                 catch (Exception e)
@@ -128,6 +156,11 @@ namespace BadNorthMP.Spectator
                 autoStopAt = Time.unscaledTime + AutoWatchSeconds;
                 ModLog.Info($"Auto-watch: island is up: {DescribeIsland()}");
             }
+            else if (autoStopAt >= 0 && Time.unscaledTime >= nextAutoLog && Time.unscaledTime < autoStopAt)
+            {
+                nextAutoLog = Time.unscaledTime + 10f;
+                ModLog.Info($"Auto-watch: {DescribeIsland()}");
+            }
             else if (autoStopAt >= 0 && Time.unscaledTime >= autoStopAt)
             {
                 autoWatching = false;
@@ -141,7 +174,7 @@ namespace BadNorthMP.Spectator
             Island island = Singleton<IslandGameplayManager>.instance.island;
             return $"'{island.name}' level={island.levelNode.index} english={island.english.agents.Count} " +
                    $"vikings={island.vikings.agents.Count} navSpots={island.navSpotter.navSpots.Count} " +
-                   $"houses={(island.village ? island.village.houses.Length : 0)} camera={(bool)Singleton<LevelCamera>.instance}";
+                   $"houses={(island.village ? island.village.houses.Length : 0)} camera={(bool)Singleton<LevelCamera>.instance} puppets={PuppetWorld.PuppetCount}";
         }
 
         private static bool AtMainMenu()
@@ -150,7 +183,7 @@ namespace BadNorthMP.Spectator
             return campaigns && !campaigns.campaign && Singleton<Stack>.instance && Singleton<Stack>.instance.stateMeta.active;
         }
 
-        private static bool IslandReady()
+        public static bool IslandReady()
         {
             var manager = Singleton<IslandGameplayManager>.instance;
             return manager && manager.island && manager.island.state == Island.State.Playing;
@@ -210,6 +243,7 @@ namespace BadNorthMP.Spectator
             savedCampaign = null;
             savedMeta = null;
             Active = false;
+            PuppetWorld.Reset();
             exiting = false;
             exitRequested = false;
             ModLog.Info("Spectator: back at the main menu, saves restored");
