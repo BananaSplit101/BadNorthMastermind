@@ -593,7 +593,7 @@ namespace BadNorthMP.Spectator
             {
                 float end = b.animTime < a.animTime ? b.animTime + 1f : b.animTime; // looped around
                 result.anim = a.anim;
-                result.animTime = Mathf.Lerp(a.animTime, end, t) % 1f;
+                result.animTime = Mathf.Min(Mathf.Lerp(a.animTime, end, t) % 1f, 0.999f);
             }
             else
             {
@@ -616,7 +616,7 @@ namespace BadNorthMP.Spectator
                 animator.SetBool(MovingParam, s.moving);
                 animator.SetFloat(SpeedParam, s.speed);
             }
-            animator.Play(s.anim, 0, s.animTime);
+            animator.Play(s.anim, 0, Mathf.Min(s.animTime, 0.999f)); // see DefenderTracker.WriteAnimation
         }
 
         // ---- Helpers -------------------------------------------------------------------------

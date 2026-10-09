@@ -360,7 +360,9 @@ namespace BadNorthMP.Net
             {
                 AnimatorStateInfo state = animator.GetCurrentAnimatorStateInfo(0);
                 anim = state.fullPathHash;
-                time = state.loop ? state.normalizedTime % 1f : Mathf.Clamp01(state.normalizedTime);
+                // A finished one-shot (Throw, Attack) holds its last frame; Animator.Play at exactly 1.0 can
+                // show the first frame instead (e.g. the torch back in hand), so stop just short of the end.
+                time = state.loop ? state.normalizedTime % 1f : Mathf.Clamp(state.normalizedTime, 0f, 0.999f);
             }
             w.Write(anim);
             w.Write((ushort)Mathf.RoundToInt(time * 65535f));
