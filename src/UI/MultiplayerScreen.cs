@@ -71,7 +71,7 @@ namespace BadNorthMP.UI
 
             ModalOverlay popup = ModalOverlay.GetInstance();
             overlay = popup;
-            messageText = GameUi.InitPopup(popup, "Multiplayer", BuildBody());
+            messageText = GameUi.InitPopup(popup, "Multiplayer " + Plugin.Version, BuildBody());
 
             if (Spectator.SpectatorSession.Active)
                 AddButton("Stop watching", Spectator.SpectatorSession.Instance.Stop);
@@ -109,7 +109,7 @@ namespace BadNorthMP.UI
                 return "spectating";
             if (!Session.InLobby)
                 return "idle";
-            return $"{(Session.IsHost ? "host" : "guest")}/{Session.Members().Count}/{(Roles.IsMastermind ? "mm" : "def")}/{InCampaign()}";
+            return $"{(Session.IsHost ? "host" : "guest")}/{Session.Members().Count}/{(Roles.IsMastermind ? "mm" : Roles.IsDefender ? "leader" : "remote")}/{InCampaign()}";
         }
 
         private static string MastermindChoiceLabel()
@@ -171,7 +171,11 @@ namespace BadNorthMP.UI
                 sb.AppendLine("Start or continue a campaign and pick an island. Your mastermind sends the Vikings: there are no normal waves while they're connected.");
 
             foreach (string line in Game.RecentEvents(3))
+            {
+                // Role announcements describe past states; the player list above is authoritative.
+                if (line == "You are the mastermind." || line.StartsWith("You defend.")) continue;
                 sb.AppendLine().Append(line);
+            }
             return sb.ToString();
         }
 

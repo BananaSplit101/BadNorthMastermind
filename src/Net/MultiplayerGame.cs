@@ -136,6 +136,7 @@ namespace BadNorthMP.Net
             if (!Session.InLobby)
             {
                 knownOwner = CSteamID.Nil;
+                events.Clear();
                 HasDefenderStatus = false;
                 pingMs.Clear();
                 knownMembers.Clear();
