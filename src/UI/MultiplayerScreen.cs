@@ -71,15 +71,12 @@ namespace BadNorthMP.UI
 
             ModalOverlay popup = ModalOverlay.GetInstance();
             overlay = popup;
-            popup.InitializeNonLocalized("Multiplayer", BuildBody(), cancelable: false);
-            // Pooled popups keep their Localize components; stop them from overwriting our text.
-            var traverse = Traverse.Create(popup);
-            traverse.Field<Localize>("titleLocalize").Value.enabled = false;
-            traverse.Field<Localize>("messageLocalize").Value.enabled = false;
-            messageText = traverse.Field<Text>("message").Value;
+            messageText = GameUi.InitPopup(popup, "Multiplayer", BuildBody());
 
             if (Spectator.SpectatorSession.Active)
                 AddButton("Stop watching", Spectator.SpectatorSession.Instance.Stop);
+            else if (Session.Ready && !Roles.IsMastermind && !InCampaign())
+                GameUi.AddPopupButton(popup, "Play", () => { overlay = null; CampaignScreen.Open(); }, closes: true);
 
             if (Session.Ready && !Session.InLobby)
             {
@@ -113,7 +110,7 @@ namespace BadNorthMP.UI
                 return "spectating";
             if (!Session.InLobby)
                 return "idle";
-            return $"{(Session.IsHost ? "host" : "guest")}/{Session.Members().Count}/{(Roles.IsMastermind ? "mm" : "def")}";
+            return $"{(Session.IsHost ? "host" : "guest")}/{Session.Members().Count}/{(Roles.IsMastermind ? "mm" : "def")}/{InCampaign()}";
         }
 
         private static string MastermindChoiceLabel()
@@ -124,18 +121,13 @@ namespace BadNorthMP.UI
             return Roles.IsRandom ? $"Mastermind: Random ({name})" : $"Mastermind: {name}";
         }
 
-        // ModalOverlay closes itself when a button's action returns true. Return false to keep the screen
-        // open, and use the click sound as the "fail" sound so it still sounds like a normal press.
-        private Widget AddButton(string label, Action action)
+        private Widget AddButton(string label, Action action) => GameUi.AddPopupButton(overlay, label, action);
+
+        /// <summary>Already in a campaign (map or battle): Play only makes sense from the main menu.</summary>
+        private static bool InCampaign()
         {
-            Widget widget = overlay.AddButton(PlaceholderTerm, () =>
-                {
-                    action();
-                    return false;
-                })
-                .SetFailAudio(FabricID.uiButtonClick)
-                .SetHoverAudio(FabricID.uiHover);
-            return GameUi.SetPlainLabel(widget, label);
+            var campaigns = Singleton<Voxels.TowerDefense.CampaignManager>.instance;
+            return campaigns && campaigns.campaign;
         }
 
         private void AddDynamicButton(Func<string> label, Action action)

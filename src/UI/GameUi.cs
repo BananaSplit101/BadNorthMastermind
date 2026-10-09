@@ -23,6 +23,36 @@ namespace BadNorthMP.UI
             return widget;
         }
 
+        // Any real term: popup labels are replaced with plain text right after.
+        private const string PlaceholderTerm = "UI/COMMON/OK";
+
+        /// <summary>Fill a pooled game popup with our own title and body. Returns the body Text for updates.</summary>
+        public static UnityEngine.UI.Text InitPopup(ModalOverlay popup, string title, string body)
+        {
+            popup.InitializeNonLocalized(title, body, cancelable: false);
+            // Pooled popups keep their Localize components; stop them from overwriting our text.
+            var traverse = Traverse.Create(popup);
+            traverse.Field<I2.Loc.Localize>("titleLocalize").Value.enabled = false;
+            traverse.Field<I2.Loc.Localize>("messageLocalize").Value.enabled = false;
+            return traverse.Field<UnityEngine.UI.Text>("message").Value;
+        }
+
+        /// <summary>
+        /// A popup button. ModalOverlay closes itself when the action returns true; with closes = false it stays
+        /// open, and the click sound doubles as the "fail" sound so it still sounds like a normal press.
+        /// </summary>
+        public static Widget AddPopupButton(ModalOverlay popup, string label, System.Action action, bool closes = false)
+        {
+            Widget widget = popup.AddButton(PlaceholderTerm, () =>
+                {
+                    action();
+                    return closes;
+                })
+                .SetFailAudio(FabricID.uiButtonClick)
+                .SetHoverAudio(FabricID.uiHover);
+            return SetPlainLabel(widget, label);
+        }
+
         /// <summary>Moves <paramref name="widget"/> to just after the menu's widget showing <paramref name="term"/>.</summary>
         public static void PlaceAfter(GeneratedMenu menu, Widget widget, string term)
         {
