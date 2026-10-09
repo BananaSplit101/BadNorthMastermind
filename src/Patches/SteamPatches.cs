@@ -18,4 +18,14 @@ namespace BadNorthMP.Patches
     {
         private static bool Prefix() => false;
     }
+
+    // The stock platform lobby also subscribes to every Steam lobby-enter callback, including ours.
+    // It must not adopt mod lobbies and run a second lobby lifecycle.
+    [HarmonyPatch(typeof(SteamLobby), "OnLobbyEntered")]
+    internal static class StockLobbyEnterPatch
+    {
+        private static bool Prefix(Steamworks.LobbyEnter_t message) =>
+            string.IsNullOrEmpty(Steamworks.SteamMatchmaking.GetLobbyData(
+                new Steamworks.CSteamID(message.m_ulSteamIDLobby), "bnmp_version"));
+    }
 }

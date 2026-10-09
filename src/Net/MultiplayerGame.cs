@@ -74,6 +74,7 @@ namespace BadNorthMP.Net
                 if (Roles.IsDefender && sender == Roles.MastermindId)
                     HandleWaveRequest(sender);
             });
+            RemoteDefender.Init();
             BattleSync.Init();
             MastermindNet.Init();
             Router.On(MsgType.Notice, (sender, r) =>

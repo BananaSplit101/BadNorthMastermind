@@ -68,7 +68,7 @@ namespace BadNorthMP.Net
     /// <summary>Splits large payloads into P2P-sized chunks and reassembles them.</summary>
     internal static class Chunker
     {
-        private const int ChunkSize = 256 * 1024;
+        private const int ChunkSize = 48 * 1024; // Fits the 64 KiB receive buffer.
 
         private static int nextTransferId = 1;
         private static readonly Dictionary<int, byte[][]> pending = new Dictionary<int, byte[][]>();

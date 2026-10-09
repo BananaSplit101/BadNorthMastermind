@@ -116,7 +116,7 @@ namespace BadNorthMP.Spectator
                 pending = null;
                 try
                 {
-                    PuppetWorld.Reset();
+                    PuppetWorld.Reset(keepBuffered: pendingReplay == null);
                     PuppetWorld.SetReplay(pendingReplay);
                     pendingReplay = null;
                     Begin(info);

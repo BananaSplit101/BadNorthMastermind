@@ -13,7 +13,7 @@ namespace BadNorthMP.Net
     {
         // The game's platform layer uses P2P channels 1-3 (SteamElements); stay clear of them.
         public const int Channel = 7;
-        private const int MaxMembers = 2; // one defender, one mastermind for now
+        private const int MaxMembers = 5; // one defender, one mastermind for now
         private const string VersionKey = "bnmp_version";
         private const uint EnterResponseSuccess = 1;
 
@@ -38,6 +38,7 @@ namespace BadNorthMP.Net
         private CallResult<LobbyCreated_t> lobbyCreated;
 
         private CSteamID pendingLobby = CSteamID.Nil;
+        private bool creatingLobby;
         private ulong launchLobby;
         private readonly byte[] receiveBuffer = new byte[64 * 1024];
 
@@ -87,16 +88,18 @@ namespace BadNorthMP.Net
 
         public void Host()
         {
-            if (!Ready)
+            if (!Ready || creatingLobby || InLobby || pendingLobby != CSteamID.Nil)
                 return;
-            Leave();
+            creatingLobby = true;
             Status = "Creating lobby...";
             lobbyCreated.Set(SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypeFriendsOnly, MaxMembers));
         }
 
         public void Join(CSteamID lobby)
         {
-            if (!Ready)
+            if (!Ready || lobby == CSteamID.Nil || lobby == Lobby || lobby == pendingLobby)
+                return;
+            if (creatingLobby)
                 return;
             Leave();
             pendingLobby = lobby;
@@ -117,6 +120,7 @@ namespace BadNorthMP.Net
         {
             Status = status;
             pendingLobby = CSteamID.Nil;
+            creatingLobby = false;
             if (!InLobby)
                 return;
 
@@ -202,6 +206,7 @@ namespace BadNorthMP.Net
 
         private void OnLobbyCreated(LobbyCreated_t result, bool ioFailure)
         {
+            creatingLobby = false;
             if (ioFailure || result.m_eResult != EResult.k_EResultOK)
             {
                 Status = $"Couldn't create lobby ({result.m_eResult})";
@@ -210,19 +215,21 @@ namespace BadNorthMP.Net
             }
             // The creator also receives LobbyEnter_t, which finishes the setup.
             pendingLobby = new CSteamID(result.m_ulSteamIDLobby);
+            SteamMatchmaking.SetLobbyMemberLimit(pendingLobby, MaxMembers);
             SteamMatchmaking.SetLobbyData(pendingLobby, VersionKey, Plugin.Version);
         }
 
         private void OnLobbyEnter(LobbyEnter_t result)
         {
             var lobby = new CSteamID(result.m_ulSteamIDLobby);
-            if (lobby != pendingLobby)
+            if (lobby != pendingLobby && !creatingLobby)
                 return; // not a lobby we asked for
             pendingLobby = CSteamID.Nil;
+            creatingLobby = false;
 
             if (result.m_EChatRoomEnterResponse != EnterResponseSuccess)
             {
-                Status = $"Couldn't join lobby (response {result.m_EChatRoomEnterResponse})";
+                Status = result.m_EChatRoomEnterResponse == 4 ? "Lobby full. Ask the host to create a new lobby with this version." : $"Couldn't join lobby (response {result.m_EChatRoomEnterResponse})";
                 ModLog.Error(Status);
                 return;
             }

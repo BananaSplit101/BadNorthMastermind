@@ -74,6 +74,7 @@ namespace BadNorthMP.Game
         /// <summary>Opens the game's own new-campaign popup (difficulty, heroes, seed) for a multiplayer slot.</summary>
         public static void StartNew()
         {
+            if (Net.SteamSession.Instance.InLobby && !Net.Roles.IsDefender) return;
             OpeningNew = true;
             try
             {
@@ -85,7 +86,11 @@ namespace BadNorthMP.Game
             }
         }
 
-        public static void Continue(CampaignSaveMeta meta) => MetaMenuHelpers.LoadGame(meta);
+        public static void Continue(CampaignSaveMeta meta)
+        {
+            if (Net.SteamSession.Instance.InLobby && !Net.Roles.IsDefender) return;
+            MetaMenuHelpers.LoadGame(meta);
+        }
 
         public static void Delete(CampaignSaveMeta meta)
         {

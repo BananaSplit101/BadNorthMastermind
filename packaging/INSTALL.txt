@@ -29,3 +29,12 @@ from the game folder.
 
 PROBLEMS
 Send BepInEx\LogOutput.log from the game folder.
+
+0.6.2 multiplayer flow
+Everyone installs the same version and restarts. Create a NEW lobby.
+Host = mastermind; up to four friends join as defenders (five total).
+The first defender listed leads: Multiplayer > Play opens the campaign.
+Everyone else waits on the main menu; the same island opens automatically.
+Other defenders share squad control: 1-4 chooses a squad, right-click
+moves it. Remote abilities aren't supported yet.
+Only the campaign leader simulates and saves the battle.

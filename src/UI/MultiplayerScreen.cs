@@ -75,7 +75,7 @@ namespace BadNorthMP.UI
 
             if (Spectator.SpectatorSession.Active)
                 AddButton("Stop watching", Spectator.SpectatorSession.Instance.Stop);
-            else if (Session.Ready && !Roles.IsMastermind && !InCampaign())
+            else if (Session.Ready && (!Session.InLobby || Roles.IsDefender) && !InCampaign())
                 GameUi.AddPopupButton(popup, "Play", () => { overlay = null; CampaignScreen.Open(); }, closes: true);
 
             if (Session.Ready && !Session.InLobby)
@@ -87,8 +87,7 @@ namespace BadNorthMP.UI
                 if (Session.IsHost)
                 {
                     AddButton("Invite friend", Session.OpenInviteDialog);
-                    if (Session.Members().Count > 1)
-                        AddDynamicButton(MastermindChoiceLabel, Roles.CycleChoice);
+
                 }
 
                 AddButton("Leave lobby", Session.Leave);
@@ -166,6 +165,8 @@ namespace BadNorthMP.UI
                 sb.AppendLine(SpectatorSession.Active
                     ? "You're watching the battle. Build your waves in the panel on the right."
                     : "Stay on the main menu: the defender's battle opens here automatically, with your army panel.");
+            else if (Roles.IsRemoteDefender)
+                sb.AppendLine("Wait on the main menu for the campaign leader. In battle: 1-4 selects a squad; right-click a tile to send a move order. Squads have shared control.");
             else
                 sb.AppendLine("Start or continue a campaign and pick an island. Your mastermind sends the Vikings: there are no normal waves while they're connected.");
 

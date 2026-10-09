@@ -101,9 +101,9 @@ namespace BadNorthMP.Spectator
             replayStart = -1f;
         }
 
-        public static void Reset()
+        public static void Reset(bool keepBuffered = false)
         {
-            buffered.Clear();
+            if (!keepBuffered) buffered.Clear();
             squads.Clear();
             puppets.Clear();
             shipPuppets.Clear();

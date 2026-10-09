@@ -27,7 +27,7 @@ namespace BadNorthMP.Net
 
         private static byte[] battleInfo;
         private static readonly List<byte[]> reliableHistory = new List<byte[]>();
-        private static CSteamID sentTo = CSteamID.Nil;
+        private static readonly HashSet<CSteamID> sentTo = new HashSet<CSteamID>();
         private static BinaryWriter recording;
         private static float startTime;
 
@@ -36,7 +36,7 @@ namespace BadNorthMP.Net
             End();
             battleInfo = info.ToBytes();
             reliableHistory.Clear();
-            sentTo = CSteamID.Nil;
+            sentTo.Clear();
             startTime = Time.time;
             Active = true;
             try
@@ -68,8 +68,8 @@ namespace BadNorthMP.Net
             }
             if (reliable)
                 reliableHistory.Add(packet);
-            if (sentTo != CSteamID.Nil)
-                SteamSession.Instance.Send(sentTo, packet, reliable);
+            foreach (CSteamID recipient in sentTo)
+                SteamSession.Instance.Send(recipient, packet, reliable);
         }
 
         /// <summary>Every frame: catch up a newly arrived (or newly chosen) mastermind.</summary>
@@ -77,26 +77,27 @@ namespace BadNorthMP.Net
         {
             if (!Active)
                 return;
-            CSteamID mastermind = Roles.IsDefender && Roles.HasMastermind ? Roles.MastermindId : CSteamID.Nil;
-            if (mastermind == sentTo)
-                return;
-            sentTo = mastermind;
-            if (mastermind == CSteamID.Nil)
-                return;
-            Chunker.Send(mastermind, battleInfo);
-            foreach (byte[] packet in reliableHistory)
-                SteamSession.Instance.Send(mastermind, packet, reliable: true);
-            ModLog.Info($"Sent battle to {SteamSession.NameOf(mastermind)} ({battleInfo.Length / 1024} KB + {reliableHistory.Count} events)");
+            if (!Roles.IsDefender || !Roles.HasMastermind) return;
+            var members = SteamSession.Instance.Members();
+            sentTo.RemoveWhere(member => !members.Contains(member));
+            foreach (CSteamID recipient in members)
+            {
+                if (recipient == SteamSession.Instance.Me || !sentTo.Add(recipient)) continue;
+                Chunker.Send(recipient, battleInfo);
+                foreach (byte[] packet in reliableHistory)
+                    SteamSession.Instance.Send(recipient, packet, reliable: true);
+                ModLog.Info($"Sent shared battle to {SteamSession.NameOf(recipient)}");
+            }
         }
 
         public static void End()
         {
             if (!Active)
                 return;
-            if (sentTo != CSteamID.Nil)
-                SteamSession.Instance.Send(sentTo, Packet.Build(MsgType.BattleEnd));
+            foreach (CSteamID recipient in sentTo)
+                SteamSession.Instance.Send(recipient, Packet.Build(MsgType.BattleEnd));
             Active = false;
-            sentTo = CSteamID.Nil;
+            sentTo.Clear();
             reliableHistory.Clear();
             if (recording != null)
             {
@@ -114,8 +115,9 @@ namespace BadNorthMP.Net
         {
             Router.On(MsgType.BattleChunk, (sender, r) =>
             {
+                if (!Roles.WatchesBattle || sender != Roles.DefenderId) return;
                 byte[] payload = Chunker.Receive(r);
-                if (payload == null || !Roles.IsMastermind || sender != Roles.DefenderId)
+                if (payload == null || !Roles.WatchesBattle || sender != Roles.DefenderId)
                     return;
                 ModLog.Info($"Received battle from {SteamSession.NameOf(sender)} ({payload.Length / 1024} KB)");
                 SpectatorSession.Instance.Watch(BattleInfo.FromBytes(payload), null);
@@ -127,7 +129,7 @@ namespace BadNorthMP.Net
             });
             Router.BattleMessage = (sender, packet) =>
             {
-                if (Roles.IsMastermind && sender == Roles.DefenderId)
+                if (Roles.WatchesBattle && sender == Roles.DefenderId)
                     PuppetWorld.Receive(packet);
             };
         }

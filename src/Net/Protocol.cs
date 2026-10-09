@@ -36,6 +36,7 @@ namespace BadNorthMP.Net
         BuildWave = 40,   // mastermind -> defender: int beach, byte count, then (int vikingType, int amount) pairs
         GiveUp = 41,      // mastermind -> defender: (empty)
         MasterState = 42, // defender -> mastermind: MasterState
+        DefenderMove = 44, // int hero index, int navspot index
         Result = 43,      // defender -> mastermind: bool ok, string message
     }
 
