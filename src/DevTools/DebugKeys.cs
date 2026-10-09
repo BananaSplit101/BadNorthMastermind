@@ -17,6 +17,8 @@ namespace BadNorthMP.DevTools
                 Run("NextWave", LaunchNextWave);
             if (Input.GetKeyDown(KeyCode.F10))
                 Run("Dump", DumpIsland);
+            if (Input.GetKeyDown(KeyCode.F12))
+                Run("TestWave", TestCustomWave);
             if (Input.GetKeyDown(KeyCode.F11))
                 Run("WatchLastBattle", () => Spectator.SpectatorSession.Instance.WatchLastBattle());
         }
@@ -84,6 +86,28 @@ namespace BadNorthMP.DevTools
         {
             if (!GameAccess.TryLaunchNextWave(out string message))
                 ModLog.Warn("F9: " + message);
+        }
+
+        /// <summary>F12: launch a mastermind-style custom wave (4 of the island's first Viking type, first beach).</summary>
+        private static void TestCustomWave()
+        {
+            if (!GameAccess.IsPlaying)
+            {
+                ModLog.Warn("F12: not on an island in play");
+                return;
+            }
+            Island island = GameAccess.CurrentIsland;
+            var types = Game.Economy.AvailableTypes(island);
+            if (types.Count == 0)
+            {
+                ModLog.Warn("F12: no Viking types on this island");
+                return;
+            }
+            var units = new List<KeyValuePair<VikingReference, int>> { new KeyValuePair<VikingReference, int>(types[0], 4) };
+            if (Game.CustomWaves.TryLaunch(island, 0, units, out string error, out int count))
+                ModLog.Info($"F12: launched {count} {types[0].type} at the {Game.BeachChoices.Get(island)[0].label} beach ({Game.BeachChoices.Get(island).Count} beaches)");
+            else
+                ModLog.Warn("F12: " + error);
         }
 
         /// <summary>F10: write the island's squads, vikings and waves to the log.</summary>

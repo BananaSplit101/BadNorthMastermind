@@ -256,6 +256,8 @@ namespace BadNorthMP.Net
                 if (!t.died && t.agent.deadState != null && t.agent.deadState.active)
                 {
                     t.died = true;
+                    if (t.agent.faction && t.agent.faction.side == Faction.Side.English)
+                        Game.Economy.OnDefenderKilled(hero: t.agent.GetComponent<Standard>());
                     BattleStream.Send(Packet.Build(MsgType.AgentDied, w => w.Write(t.id)), reliable: true);
                 }
                 // Includes Vikings riding in on their ship before they spawn onto the beach.

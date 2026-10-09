@@ -30,6 +30,13 @@ namespace BadNorthMP.Net
         Sound = 22,       // byte target (SoundTarget), int targetId, Vector3 pos, bool byName, string name | int id, int action (-1 = default)
         Effect = 23,      // string effectName, Vector3 pos, short4 rot, Vector3 scale, bool onNavMesh
         Dust = 24,        // Vector3 pos, Vector3 dir: footstep/landing dust (DustParticles)
+        LastBattleMessage = 39,
+
+        // Mastermind game (not part of the recorded battle stream).
+        BuildWave = 40,   // mastermind -> defender: int beach, byte count, then (int vikingType, int amount) pairs
+        GiveUp = 41,      // mastermind -> defender: (empty)
+        MasterState = 42, // defender -> mastermind: MasterState
+        Result = 43,      // defender -> mastermind: bool ok, string message
     }
 
     internal static class SoundTarget

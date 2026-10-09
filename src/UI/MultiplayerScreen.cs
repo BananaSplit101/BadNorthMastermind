@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using BadNorthMP.Net;
+using BadNorthMP.Spectator;
 using HarmonyLib;
 using I2.Loc;
 using Steamworks;
@@ -92,11 +93,7 @@ namespace BadNorthMP.UI
                     if (Session.Members().Count > 1)
                         AddDynamicButton(MastermindChoiceLabel, Roles.CycleChoice);
                 }
-                if (Roles.IsMastermind)
-                    AddButton("Launch next wave", Game.RequestWave);
-                else if (Roles.HasMastermind)
-                    AddDynamicButton(() => "Mastermind controls waves: " + (Game.mastermindControlEnabled ? "On" : "Off"),
-                        () => Game.mastermindControlEnabled = !Game.mastermindControlEnabled);
+
                 AddButton("Leave lobby", Session.Leave);
             }
 
@@ -174,11 +171,11 @@ namespace BadNorthMP.UI
             if (!Roles.HasMastermind)
                 sb.AppendLine("Invite a friend to play.");
             else if (Roles.IsMastermind)
-                sb.AppendLine(DescribeDefenderBattle());
+                sb.AppendLine(SpectatorSession.Active
+                    ? "You're watching the battle. Build your waves in the panel on the right."
+                    : "Stay on the main menu: the defender's battle opens here automatically, with your army panel.");
             else
-                sb.AppendLine("Start or continue a campaign and pick an island. " + (MultiplayerGame.MastermindControlsWaves
-                    ? "Your mastermind decides when the waves come."
-                    : "Waves arrive on the normal timer."));
+                sb.AppendLine("Start or continue a campaign and pick an island. Your mastermind sends the Vikings: there are no normal waves while they're connected.");
 
             foreach (string line in Game.RecentEvents(3))
                 sb.AppendLine().Append(line);

@@ -75,6 +75,7 @@ namespace BadNorthMP.Net
                     HandleWaveRequest(sender);
             });
             BattleSync.Init();
+            MastermindNet.Init();
             Router.On(MsgType.Notice, (sender, r) =>
             {
                 if (sender == Roles.DefenderId)
@@ -89,6 +90,7 @@ namespace BadNorthMP.Net
             DefenderTracker.Update();
             if (!Session.InLobby)
                 return;
+            MastermindNet.Update();
 
             float now = Time.realtimeSinceStartup;
             if (now >= nextPing)
@@ -137,6 +139,7 @@ namespace BadNorthMP.Net
                 pingMs.Clear();
                 knownMembers.Clear();
                 lastMastermind = CSteamID.Nil;
+                Game.MastermindSession.Reset();
                 if (Spectator.SpectatorSession.Active)
                     Spectator.SpectatorSession.Instance.Stop();
                 return;

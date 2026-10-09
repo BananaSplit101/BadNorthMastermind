@@ -17,7 +17,7 @@ namespace BadNorthMP.Net
 
         public static void On(MsgType type, Handler handler) => handlers[type] = handler;
 
-        public static bool IsBattleMessage(MsgType type) => type >= MsgType.SquadSpawn;
+        public static bool IsBattleMessage(MsgType type) => type >= MsgType.SquadSpawn && type <= MsgType.LastBattleMessage;
 
         public static void Dispatch(CSteamID sender, byte[] data)
         {
