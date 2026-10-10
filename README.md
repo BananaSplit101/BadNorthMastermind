@@ -10,7 +10,7 @@ Up to four defenders play one shared campaign together, each commanding their ow
 Everything runs over Steam lobbies and invites. Each player sees the battle live in their own game.
 
 ## Install
-1. Download [`release/BadNorthMP.zip`](https://github.com/BananaSplit101/BadNorthMastermind/raw/main/release/BadNorthMP.zip).
+1. Download `BadNorthMP.zip` from the [latest release](https://github.com/BananaSplit101/BadNorthMastermind/releases/latest).
 2. Close Bad North and open its folder: Steam > Bad North > Manage > Browse local files.
 3. Extract the zip there, so `winhttp.dll` and `BepInEx/` sit next to `BadNorth.exe`.
 4. Start the game through Steam. **Multiplayer** is in the main menu. Enable the Steam overlay for invites.
@@ -18,8 +18,8 @@ Everything runs over Steam lobbies and invites. Each player sees the battle live
 The zip contains [BepInEx 5](https://github.com/BepInEx/BepInEx) (x86) and the mod.
 
 ## Updates
-The mod checks this repository for a new version and updates itself:
-- **Where it looks:** it reads `release/latest.txt` from the `main` branch, which lists the version, size and SHA-256 of `release/BadNorthMP.dll`.
+The mod checks this repository's releases for a new version and updates itself:
+- **Where it looks:** it reads `latest.txt` from the newest [release](https://github.com/BananaSplit101/BadNorthMastermind/releases). That file lists the version, size and SHA-256 of the release's `BadNorthMP.dll`.
 - **When it checks:** at start-up, every 15 minutes, and on joining a lobby.
 - **What you see:** a notice appears, and the Multiplayer screen offers *Update to X*.
 - **Safety:** the download is verified against the published size and hash before it's kept.
@@ -31,7 +31,8 @@ Everyone in a lobby must run the same version.
 Requirements:
 - Bad North installed with BepInEx 5 x86 (install the zip above once);
 - the .NET SDK (any recent version builds the `net35` target through reference packages);
-- PowerShell 7 (`pwsh`) for the tools.
+- PowerShell 7 (`pwsh`) for the tools;
+- the [GitHub CLI](https://cli.github.com/) (`gh`, signed in with `gh auth login`) to publish releases.
 
 ```
 dotnet build src/BadNorthMP.csproj
@@ -48,12 +49,13 @@ python tools/check-spectator-gate.py
 The tests compile the real sources against small stubs of the game, Unity and Steam, then run them on the .NET SDK.
 
 ### Releasing
-1. Bump `Version` in [`src/Plugin.cs`](src/Plugin.cs).
-2. Run `pwsh tools/package.ps1`. It builds Release and refreshes `release/`:
-   - `BadNorthMP.dll`;
+1. Bump `Version` in [`src/Plugin.cs`](src/Plugin.cs), then commit and push to `main`.
+2. Run `pwsh tools/package.ps1 -Publish -Notes "What changed"`. It builds Release and creates the GitHub release `v<version>` with three files:
    - `BadNorthMP.zip`, the full install with BepInEx;
+   - `BadNorthMP.dll`;
    - `latest.txt`, the version, size and SHA-256.
-3. Commit and push `release/` to `main`. Running games pick the update up on their next check.
+
+Running games pick the update up on their next check. Without `-Publish`, the files are only built into `dist/release/`.
 
 ## Layout
 | Path | What |
@@ -64,6 +66,7 @@ The tests compile the real sources against small stubs of the game, Unity and St
 | `src/UI/` | The mastermind HUD and war chest, commander draft, vote panel and Multiplayer screen, built from the game's own widgets |
 | `src/Patches/` | Harmony patches on the game |
 | `assets/` | Commander flags and sail-in war cries (from GMW's mods, with permission) embedded in the DLL |
+| `release/` | The update channel of 1.0.0, which read the newest version from here instead of from releases. It points at 1.0.1 and doesn't change again |
 | `docs/` | Notes on the game's internals and the unit-visual stream format |
 | `tools/` | The package script, test suites and checks |
 

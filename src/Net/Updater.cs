@@ -13,16 +13,18 @@ namespace BadNorthMP.Net
 {
     /// <summary>
     /// Versions and updates. Everyone in a lobby must run the same version (each player's is in the lobby's member
-    /// data). New versions come from the mod's GitHub repo: release/latest.txt says what the newest one is and
-    /// release/BadNorthMP.dll is the build. A download must match the size and SHA-256 published with it; it waits
-    /// next to the game until the player chooses Install and restart. Then the game closes, a small script swaps the
+    /// data). New versions are the mod's GitHub releases: the newest release's latest.txt says which version it is,
+    /// and that release (tag v&lt;version&gt;) carries BadNorthMP.dll. A download must match the size and SHA-256
+    /// published with it; it waits next to the game until the player chooses Install and restart. Then the game closes, a small script swaps the
     /// DLL in (keeping the old one as BadNorthMP.dll.previous) and starts the game again through Steam, back into the
     /// same lobby.
     /// </summary>
     internal class Updater : MonoBehaviour
     {
         public const string Repo = "BananaSplit101/BadNorthMastermind";
-        private const string ReleaseUrl = "https://raw.githubusercontent.com/" + Repo + "/main/release/";
+        // GitHub redirects these to the release's files; UnityWebRequest follows the redirect.
+        private const string LatestUrl = "https://github.com/" + Repo + "/releases/latest/download/latest.txt";
+        private static string DllUrl(string version) => "https://github.com/" + Repo + "/releases/download/v" + version + "/BadNorthMP.dll";
         private const string VersionKey = "bnmp_client_version";
         private const float RecheckSeconds = 15f * 60f;
 
@@ -106,13 +108,13 @@ namespace BadNorthMP.Net
             }
             if (Busy || Staged) return;
             if (Compatible) Status = "Everyone has " + Plugin.Version;
-            else if (someoneNewer) Status = $"{others}. You have {Plugin.Version}: " + (UpdateAvailable ? "update to play." : "an update will show here once it's on GitHub.");
+            else if (someoneNewer) Status = $"{others}. You have {Plugin.Version}: " + (UpdateAvailable ? "update to play." : "an update will show here once it's released on GitHub.");
             else Status = $"{others}. They need to update to {Plugin.Version}.";
         }
 
         private IEnumerator Check()
         {
-            using (var request = UnityWebRequest.Get(ReleaseUrl + "latest.txt?t=" + DateTime.UtcNow.Ticks))
+            using (var request = UnityWebRequest.Get(LatestUrl + "?t=" + DateTime.UtcNow.Ticks))
             {
                 request.timeout = 20;
                 yield return request.SendWebRequest();
@@ -124,7 +126,7 @@ namespace BadNorthMP.Net
                 ReleaseInfo info = ReleaseInfo.Parse(request.downloadHandler.text);
                 if (info == null)
                 {
-                    ModLog.Warn("Update check: release/latest.txt is malformed");
+                    ModLog.Warn("Update check: the newest release's latest.txt is malformed");
                     yield break;
                 }
                 latest = info;
@@ -143,7 +145,7 @@ namespace BadNorthMP.Net
             if (!UpdateAvailable || Busy || Staged) return;
             var popup = Voxels.TowerDefense.UI.ModalOverlay.GetInstance();
             GameUi.InitPopup(popup, "Update to " + latest.version,
-                $"Download Bad North Multiplayer {latest.version} from github.com/{Repo}? The game stays open until you choose Install and restart.");
+                $"Download Bad North Multiplayer {latest.version} from github.com/{Repo}/releases? The game stays open until you choose Install and restart.");
             GameUi.AddPopupButton(popup, "Download", () => instance.StartCoroutine(instance.Download()), closes: true);
             popup.AddCancelButton();
         }
@@ -153,7 +155,7 @@ namespace BadNorthMP.Net
             if (Busy || Staged || !UpdateAvailable) yield break;
             ReleaseInfo release = latest;
             Busy = true;
-            using (var request = UnityWebRequest.Get(ReleaseUrl + "BadNorthMP.dll?v=" + release.version))
+            using (var request = UnityWebRequest.Get(DllUrl(release.version)))
             {
                 request.timeout = 120;
                 var operation = request.SendWebRequest();
