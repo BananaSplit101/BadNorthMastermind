@@ -8,7 +8,10 @@ namespace BadNorthMP.UI
     /// <summary>Helpers for putting our own content into the game's uGUI widgets.</summary>
     internal static class GameUi
     {
-        /// <summary>A commander's portrait, drawn by the game's own portrait renderer (null if the game has none loaded).</summary>
+        /// <summary>
+        /// A commander's portrait, drawn by the game's own portrait renderer (null if the game has none loaded). Its canvas
+        /// needs NativeWidgets.ShaderChannels, as the game's own have.
+        /// </summary>
         public static MaskedSprite Portrait(Transform parent, Voxels.TowerDefense.HeroDefinition hero, float size)
         {
             MaskedSprite template = null;
@@ -21,10 +24,10 @@ namespace BadNorthMP.UI
                 foreach (var candidate in Resources.FindObjectsOfTypeAll<MaskedSprite>())
                     if (candidate.GetComponent<Image>()) { template = candidate; break; }
             if (!template) return null;
-            // Only the native portrait renderer belongs here; ability/menu scripts need their original controllers.
-            var portrait = Object.Instantiate(template, parent, false);
-            foreach (var script in portrait.GetComponentsInChildren<MonoBehaviour>(true))
-                if (script != portrait && !(script is Graphic) && !(script is IMeshModifier)) Object.DestroyImmediate(script);
+            // Only the native portrait renderer belongs here; the banner's labels ("Available Slot") and scripts go.
+            var portrait = NativeWidgets.GraphicsCopy(template.gameObject, null).GetComponent<MaskedSprite>();
+            foreach (var text in portrait.GetComponentsInChildren<Text>(true)) Object.DestroyImmediate(text.gameObject);
+            portrait.transform.SetParent(parent, false);
             var rect = (RectTransform)portrait.transform;
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
             rect.anchoredPosition = Vector2.zero; rect.sizeDelta = new Vector2(size, size);

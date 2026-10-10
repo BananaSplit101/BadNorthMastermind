@@ -12,6 +12,7 @@ namespace BadNorthMP
         public static ConfigEntry<bool> SailIn, SailInCamera, SailInBars, SailInWarCry;
         public static ConfigEntry<float> SailInBoatSpeed;
         public static ConfigEntry<bool> HideEnemyLineup, ShowUnitIntegrity;
+        public static ConfigEntry<int> MaxDeployed;
 
         public static void Bind(ConfigFile config)
         {
@@ -27,6 +28,10 @@ namespace BadNorthMP
                 "Black bars while the camera follows a boat.");
             SailInWarCry = config.Bind("Commanders sail in", "War cry", true,
                 "A war cry when a commander's boat sets off.");
+            MaxDeployed = config.Bind("Party", "Max deployed commanders", 6, new ConfigDescription(
+                "How many squads the party brings to an island (the game's own limit is 4); the rest of the commanders stay " +
+                "in reserve. An island's rescued commander counts as one. Used by the campaign leader.",
+                new AcceptableValueRange<int>(1, 10)));
             HideEnemyLineup = config.Bind("Interface", "Hide enemy lineup", true,
                 "In multiplayer, defenders don't see which Vikings are coming (map, island intro and results). The mastermind always does.");
             ShowUnitIntegrity = config.Bind("Interface", "Unit integrity", true,

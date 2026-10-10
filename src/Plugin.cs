@@ -11,7 +11,7 @@ namespace BadNorthMP
     {
         public const string Id = "com.bananasplit.badnorthmp";
         public const string Name = "Bad North Multiplayer";
-        public const string Version = "1.0.5";
+        public const string Version = "1.0.6";
 
         private void Awake()
         {
@@ -19,6 +19,7 @@ namespace BadNorthMP
             ModConfig.Bind(Config);
 
             new Harmony(Id).PatchAll(typeof(Plugin).Assembly);
+            PartyFlow.MaxDeployed = () => ModConfig.MaxDeployed.Value;
 
             gameObject.AddComponent<SteamSession>();
             gameObject.AddComponent<Updater>();

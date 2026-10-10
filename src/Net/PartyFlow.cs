@@ -766,8 +766,11 @@ namespace BadNorthMP.Net
             return candidates;
         }
 
+        /// <summary>How many squads the party may bring to an island (the leader's config; Plugin wires it up).</summary>
+        public static Func<int> MaxDeployed = () => PartyDeployment.DefaultSquads;
+
         /// <summary>
-        /// Leader: share out an island's squads (PartyDeployment.Shares: at most MaxSquads, one per player first,
+        /// Leader: share out an island's squads (PartyDeployment.Shares: at most MaxDeployed, one per player first,
         /// spare squads rotating, the rescue always going) with everyone on their most rested commanders. DeployFlow
         /// then lets each player choose which of theirs go.
         /// </summary>
@@ -776,7 +779,8 @@ namespace BadNorthMP.Net
             var candidates = Candidates(island, out int rescue, out int rescueSeat);
             var players = State.seats.ConvertAll(seat => seat.player);
             int level = island && island.levelNode != null ? island.levelNode.index : -1;
-            return PartyDeployment.Plan(token, level, players, candidates, rescueSeat, rescue, State.round);
+            int max = Mathf.Clamp(MaxDeployed(), 1, PartyDeployment.SquadLimit);
+            return PartyDeployment.Plan(token, level, players, candidates, rescueSeat, rescue, State.round, max);
         }
 
         /// <summary>The squads that go with everyone on their most rested commanders (none: nobody can fight).</summary>

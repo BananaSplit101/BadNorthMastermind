@@ -48,7 +48,7 @@ namespace BadNorthMP.Net
             {
                 if (!Roles.IsDefender || Current == null || Current.done) return;
                 int token = r.ReadInt32(), count = r.ReadByte();
-                if (count > PartyDeployment.MaxSquads) return;
+                if (count > PartyDeployment.SquadLimit) return;
                 var heroes = new List<int>();
                 for (int i = 0; i < count; i++) heroes.Add(r.ReadByte());
                 bool ready = r.ReadBoolean();

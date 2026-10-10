@@ -22,7 +22,8 @@ namespace BadNorthMP.Net
     /// </summary>
     internal sealed class PartyDeployment
     {
-        public const int MaxSquads = 4, MaxHeroes = 10;
+        /// <summary>Squads per island by default (the game's own loadout allows 4), and the most a leader can set.</summary>
+        public const int DefaultSquads = 6, SquadLimit = 10, MaxHeroes = 10;
         public int token, level, rescueHero = -1;
         public ulong rescueOwner;
         public float secondsLeft;
@@ -42,19 +43,19 @@ namespace BadNorthMP.Net
         }
 
         /// <summary>
-        /// Shares out the squads: the island's rescued commander always goes and takes one of the MaxSquads; every
+        /// Shares out the squads: the island's rescued commander always goes and takes one of the maxSquads; every
         /// player with a commander who can fight gets one squad first, in seat order (the rescue's owner counts it as
         /// theirs); spare squads go round the table, starting with a different player each island. candidates[s] are
         /// seat s's commanders who can fight. With nobody able to fight, nobody goes (the rescue needs company).
         /// </summary>
-        public static int[] Shares(IList<List<int>> candidates, int rescueSeat, int round)
+        public static int[] Shares(IList<List<int>> candidates, int rescueSeat, int round, int maxSquads = DefaultSquads)
         {
             int count = candidates.Count;
             var shares = new int[count];
             bool anyone = false;
             foreach (var list in candidates) anyone |= list.Count > 0;
             if (!anyone) return shares;
-            int slots = rescueSeat >= 0 ? MaxSquads - 1 : MaxSquads, used = 0;
+            int slots = rescueSeat >= 0 ? maxSquads - 1 : maxSquads, used = 0;
             for (int s = 0; s < count && used < slots; s++)
                 if (s != rescueSeat && candidates[s].Count > 0) { shares[s]++; used++; }
             int start = count > 0 ? round % count : 0;
@@ -73,11 +74,11 @@ namespace BadNorthMP.Net
 
         /// <summary>Leader: a new deployment for an island, each player starting with their most rested commanders.</summary>
         public static PartyDeployment Plan(int token, int level, IList<ulong> players, IList<List<int>> candidates,
-            int rescueSeat, int rescueHero, int round)
+            int rescueSeat, int rescueHero, int round, int maxSquads = DefaultSquads)
         {
             var plan = new PartyDeployment { token = token, level = level };
             if (rescueSeat >= 0 && rescueHero >= 0) { plan.rescueHero = rescueHero; plan.rescueOwner = players[rescueSeat]; }
-            int[] shares = Shares(candidates, rescueSeat, round);
+            int[] shares = Shares(candidates, rescueSeat, round, maxSquads);
             for (int s = 0; s < players.Count; s++)
             {
                 var seat = new DeploySeat { player = players[s], quota = shares[s], candidates = new List<int>(candidates[s]) };
@@ -158,7 +159,7 @@ namespace BadNorthMP.Net
             {
                 var seat = new DeploySeat { player = r.ReadUInt64(), quota = r.ReadByte(), ready = r.ReadBoolean() };
                 seat.candidates = ReadIds(r); seat.picks = ReadIds(r);
-                if (seat.player == 0 || result.Find(seat.player) != null || seat.quota > MaxSquads || seat.picks.Count > seat.quota)
+                if (seat.player == 0 || result.Find(seat.player) != null || seat.quota > SquadLimit || seat.picks.Count > seat.quota)
                     throw new IOException("Invalid deployment seat");
                 foreach (int hero in seat.picks) if (!seat.candidates.Contains(hero)) throw new IOException("Invalid deployment pick");
                 result.seats.Add(seat);

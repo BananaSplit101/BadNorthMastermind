@@ -54,6 +54,8 @@ namespace BadNorthMP.UI
             var canvas = root.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = sortingOrder;
+            // The game's portraits (MaskedSprite) draw from these extra vertex channels; without them they come out black.
+            canvas.additionalShaderChannels = NativeWidgets.ShaderChannels;
             var scaler = root.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);

@@ -16,7 +16,7 @@ namespace UnityEngine {
  public struct Quaternion { public float x,y,z,w;public Quaternion(float x,float y,float z,float w){this.x=x;this.y=y;this.z=z;this.w=w;}public static Quaternion identity {get{return new Quaternion(0,0,0,1);}} }
  public struct Color {}
  public class Gradient {public Color Evaluate(float value){return new Color();}}
- public static class Mathf {public static float Max(float a,float b){return Math.Max(a,b);}public static float Sqrt(float n){return (float)Math.Sqrt(n);}public static int RoundToInt(float n){return (int)Math.Round(n);}}
+ public static class Mathf {public static int Clamp(int v,int lo,int hi){return Math.Min(Math.Max(v,lo),hi);}public static float Max(float a,float b){return Math.Max(a,b);}public static float Sqrt(float n){return (float)Math.Sqrt(n);}public static int RoundToInt(float n){return (int)Math.Round(n);}}
  public static class Time {public static float unscaledTime;}
  public static class Resources { public static object[] loaded=new object[0]; public static T[] FindObjectsOfTypeAll<T>(){var l=new List<T>();foreach(var x in loaded) if(x is T)l.Add((T)x);return l.ToArray();} }
  public class Camera {public Vector3 WorldToScreenPoint(Vector3 x){return x;} }
@@ -131,7 +131,7 @@ namespace BadNorthMP.Net {
  static byte[] Order(int token,int round,int hero,int target,bool action){return Packet.Build(action?MsgType.DefenderAction:MsgType.DefenderMove,w=>{w.Write(token);w.Write(round);w.Write(Voxels.TowerDefense.Profile.campaign.seed);w.Write(BadNorthMP.GameAccess.CurrentIsland.levelNode.index);w.Write(hero);w.Write(target);});}
  public static void Run(){
  Directory.CreateDirectory(BepInEx.Paths.ConfigPath);
- try {Core();Network();Recruits();Loadouts();Crashes();Reconnect();Deletes();LateJoin();DeployChoice();RescueRepair();Console.WriteLine(checks+" party/draft/ownership/order checks passed against actual source (game and Steam mocked).");}
+ try {PartyFlow.MaxDeployed=()=>4;Core();Network();Recruits();Loadouts();Crashes();Reconnect();Deletes();LateJoin();DeployChoice();RescueRepair();Reserve();Console.WriteLine(checks+" party/draft/ownership/order checks passed against actual source (game and Steam mocked).");}
  finally{string path=Path.GetFullPath(BepInEx.Paths.ConfigPath);if(!path.StartsWith(Path.Combine(Path.GetFullPath(Path.GetTempPath()),"BNMP-party-test-"),StringComparison.OrdinalIgnoreCase))throw new Exception("Unsafe test cleanup target");Directory.Delete(path,true);}
  }
  // A guest who hears nothing from the host during the draft drops the session and asks for the state again; the host answers.
@@ -304,13 +304,24 @@ namespace BadNorthMP.Net {
  Voxels.TowerDefense.SquadSpawner.deployed=null;UnityEngine.Time.unscaledTime+=DeployFlow.Timeout+1;DeployFlow.Update();
  Check(Voxels.TowerDefense.SquadSpawner.deployed!=null&&Voxels.TowerDefense.SquadSpawner.deployed.Count==1&&plan.done,"time ran out without landing anyone");
  // Shares: four players on a rescue island bring one squad each, the rescue's owner bringing the rescue.
- var four=PartyDeployment.Shares(new List<List<int>>{new List<int>{0},new List<int>{1},new List<int>{2},new List<int>{3}},0,0);
+ var four=PartyDeployment.Shares(new List<List<int>>{new List<int>{0},new List<int>{1},new List<int>{2},new List<int>{3}},0,0,4);
  Check(four[0]==0&&four[1]==1&&four[2]==1&&four[3]==1,"rescue island shares wrong");
  var two=PartyDeployment.Shares(new List<List<int>>{new List<int>{0,4},new List<int>{1}},-1,1);Check(two[0]==2&&two[1]==1,"spare squad not used");
- var plan4=PartyDeployment.Plan(1,5,new ulong[]{2,3,4,5},new List<List<int>>{new List<int>{0},new List<int>{1},new List<int>{2},new List<int>{3}},0,6,0);
+ var plan4=PartyDeployment.Plan(1,5,new ulong[]{2,3,4,5},new List<List<int>>{new List<int>{0},new List<int>{1},new List<int>{2},new List<int>{3}},0,6,0,4);
  Check(plan4.Find(2).ready&&!plan4.Find(3).ready&&plan4.Squads().Count==4&&plan4.Squads()[3]==6&&plan4.rescueOwner==2,"rescue plan wrong");
  var picked=PartyDeployment.Toggle(new List<int>{1},4,1);Check(picked.Count==1&&picked[0]==4&&PartyDeployment.Toggle(new List<int>{1,4},1,2).Count==1,"toggle wrong");
  var empty=PartyDeployment.Plan(1,5,new ulong[]{2},new List<List<int>>{new List<int>()},0,6,0);Check(empty.Squads().Count==0,"a rescue landed alone");
+ }
+ // Six squads by default: a lone defender with all ten commanders brings six and keeps four in reserve.
+ static void Reserve(){
+ PartyFlow.MaxDeployed=()=>PartyDeployment.DefaultSquads;
+ try{
+ Party(1);var heroes=Voxels.TowerDefense.Profile.campaign.heroes;var seat=PartyFlow.State.Find(2);
+ for(int i=2;i<10;i++){heroes[i].recruited=true;seat.recruits.Add(i);}
+ var landed=Deploy(null);Check(landed.Count==6&&DeployFlow.Current.Find(2).quota==6&&DeployFlow.Current.Find(2).candidates.Count==10,"six of ten commanders should deploy");
+ var six=PartyDeployment.Shares(new List<List<int>>{new List<int>{0,4},new List<int>{1},new List<int>{2},new List<int>{3}},0,0);
+ Check(six[0]==2&&six[1]==1&&six[2]==1&&six[3]==1,"rescue island with six squads: the spare squads go to whoever has commanders left");
+ }finally{PartyFlow.MaxDeployed=()=>4;}
  }
  // Rescue islands of a party campaign point at commanders who can really be rescued.
  static void RescueRepair(){
