@@ -72,6 +72,8 @@ namespace BadNorthMP.Net
         MapReady = 73,          // watcher -> leader: int visit, int campaignRevision: my campaign map has loaded
         NextTurnPlayed = 74,    // leader -> all: int token, int seed, int turnCount (after), float day: play this Next Turn on your own map
         CommanderSell = 75,     // mastermind -> leader: long session, int commanderId: sell it back for a share of its price
+        DeployState = 76,       // leader -> all: PartyDeployment (who brings how many squads, everyone's picks, ready)
+        DeployPick = 77,        // defender -> leader: int token, byte count, byte[] commanders, bool ready
         CampaignRequest = 68,   // watcher -> leader: (empty) the current campaign again; sent while it hasn't arrived
         CommanderOrder = 66,  // mastermind -> leader: int commanderId, byte kind (0 move, 1 burn, 2 release), int target (tile or house)
         VoteState = 63,      // leader -> all: int token, int seed, float secondsLeft, float launchSecondsLeft, bool nextTurnAllowed, byte count, (ulong player, int option)*, int decided

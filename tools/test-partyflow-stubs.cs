@@ -16,7 +16,7 @@ namespace UnityEngine {
  public struct Quaternion { public float x,y,z,w;public Quaternion(float x,float y,float z,float w){this.x=x;this.y=y;this.z=z;this.w=w;}public static Quaternion identity {get{return new Quaternion(0,0,0,1);}} }
  public struct Color {}
  public class Gradient {public Color Evaluate(float value){return new Color();}}
- public static class Mathf {public static float Sqrt(float n){return (float)Math.Sqrt(n);}public static int RoundToInt(float n){return (int)Math.Round(n);}}
+ public static class Mathf {public static float Max(float a,float b){return Math.Max(a,b);}public static float Sqrt(float n){return (float)Math.Sqrt(n);}public static int RoundToInt(float n){return (int)Math.Round(n);}}
  public static class Time {public static float unscaledTime;}
  public static class Resources { public static object[] loaded=new object[0]; public static T[] FindObjectsOfTypeAll<T>(){var l=new List<T>();foreach(var x in loaded) if(x is T)l.Add((T)x);return l.ToArray();} }
  public class Camera {public Vector3 WorldToScreenPoint(Vector3 x){return x;} }
@@ -131,7 +131,7 @@ namespace BadNorthMP.Net {
  static byte[] Order(int token,int round,int hero,int target,bool action){return Packet.Build(action?MsgType.DefenderAction:MsgType.DefenderMove,w=>{w.Write(token);w.Write(round);w.Write(Voxels.TowerDefense.Profile.campaign.seed);w.Write(BadNorthMP.GameAccess.CurrentIsland.levelNode.index);w.Write(hero);w.Write(target);});}
  public static void Run(){
  Directory.CreateDirectory(BepInEx.Paths.ConfigPath);
- try {Core();Network();Recruits();Loadouts();Crashes();Reconnect();Deletes();LateJoin();Console.WriteLine(checks+" party/draft/ownership/order checks passed against actual source (game and Steam mocked).");}
+ try {Core();Network();Recruits();Loadouts();Crashes();Reconnect();Deletes();LateJoin();DeployChoice();RescueRepair();Console.WriteLine(checks+" party/draft/ownership/order checks passed against actual source (game and Steam mocked).");}
  finally{string path=Path.GetFullPath(BepInEx.Paths.ConfigPath);if(!path.StartsWith(Path.Combine(Path.GetFullPath(Path.GetTempPath()),"BNMP-party-test-"),StringComparison.OrdinalIgnoreCase))throw new Exception("Unsafe test cleanup target");Directory.Delete(path,true);}
  }
  // A guest who hears nothing from the host during the draft drops the session and asks for the state again; the host answers.
@@ -231,7 +231,8 @@ namespace BadNorthMP.Net {
  static PartyRoster Copy(PartyRoster roster){using(var stream=new MemoryStream()){var w=new BinaryWriter(stream);roster.Write(w);w.Flush();stream.Position=0;return PartyRoster.Read(new BinaryReader(stream));}}
  static void Party(int defenders){Reset(defenders);PartyFlow.StartDraft();foreach(var seat in PartyFlow.State.seats)Router.Receive(seat.player,Pick(seat.player,PartyFlow.State.token,seat.choices,true));PartyFlow.Update();var begin=Last(MsgType.PartyBegin);var state=Last(MsgType.PartyState);SteamSession.Instance.Me=Id(2);Router.Receive(1,state);Router.Receive(1,begin);PartyFlow.CampaignReady();
   var heroes=Voxels.TowerDefense.Profile.campaign.heroes;for(int i=heroes.Count;i<10;i++)heroes.Add(new Voxels.TowerDefense.HeroDefinition(i));}
- static List<Voxels.TowerDefense.HeroDefinition> Deploy(Voxels.TowerDefense.HeroDefinition rescue){var manager=new Voxels.TowerDefense.IslandGameplayManager();manager.states.running.active=false;manager.island.levelNode.heroDefinition=rescue;typeof(PartyDeployPatch).GetMethod("Prefix",BindingFlags.NonPublic|BindingFlags.Static).Invoke(null,new object[]{manager});return Voxels.TowerDefense.SquadSpawner.deployed;}
+ static List<Voxels.TowerDefense.HeroDefinition> Deploy(Voxels.TowerDefense.HeroDefinition rescue){var manager=new Voxels.TowerDefense.IslandGameplayManager();manager.states.running.active=false;manager.island.levelNode.heroDefinition=rescue;typeof(PartyDeployPatch).GetMethod("Prefix",BindingFlags.NonPublic|BindingFlags.Static).Invoke(null,new object[]{manager});ReadyAll();return Voxels.TowerDefense.SquadSpawner.deployed;}
+ static void ReadyAll(){var plan=DeployFlow.Current;if(plan==null||plan.done)return;foreach(var seat in plan.seats)if(seat.Choosing)plan.Pick(seat.player,plan.token,new List<int>(seat.picks),true);DeployFlow.Update();}
  static int Count(List<Voxels.TowerDefense.HeroDefinition> list,ulong player){int n=0;foreach(var h in list)if(PartyFlow.State.Owns(player,Voxels.TowerDefense.Profile.campaign.heroes.IndexOf(h)))n++;return n;}
  // Someone who joins mid-campaign gets a seat while the leader is on the map; whoever has two or more commanders hands one over.
  static void LateJoin(){
@@ -274,6 +275,54 @@ namespace BadNorthMP.Net {
  roster=new PartyRoster();roster.Draft(new ulong[]{2,3});roster.seats[1].choices=new int[0];roster.seats[1].heroes=new int[0];roster.seats[1].traits=new string[0];roster.seats[1].items=new string[0];
  bool refused=false;try{Copy(roster);}catch(IOException){refused=true;}Check(refused,"draft seat without a slot accepted");
  }
+ // Before an island starts everyone picks which of their commanders go and presses Ready; the leader lands them then.
+ static void DeployChoice(){
+ var s=SteamSession.Instance;Party(2);var heroes=Voxels.TowerDefense.Profile.campaign.heroes;
+ heroes[4].recruited=true;PartyFlow.State.Find(3).recruits.Add(4);
+ Voxels.TowerDefense.SquadSpawner.deployed=null;
+ var manager=new Voxels.TowerDefense.IslandGameplayManager();manager.states.running.active=false;
+ var prefix=typeof(PartyDeployPatch).GetMethod("Prefix",BindingFlags.NonPublic|BindingFlags.Static);
+ prefix.Invoke(null,new object[]{manager});var plan=DeployFlow.Current;
+ Check(plan!=null&&!plan.done&&DeployFlow.Choosing&&Voxels.TowerDefense.SquadSpawner.deployed==null,"island started before anyone chose");
+ Check(plan.Find(2).quota==1&&plan.Find(3).quota==2,"spare squad not offered to the player with two commanders");
+ prefix.Invoke(null,new object[]{manager});Check(DeployFlow.Current==plan,"a second EnterLevel restarted the choice");
+ DeployFlow.Update();Check(Voxels.TowerDefense.SquadSpawner.deployed==null,"landed before everyone was ready");
+ Router.Receive(3,Packet.Build(MsgType.DeployPick,w=>{w.Write(plan.token);w.Write((byte)1);w.Write((byte)4);w.Write(true);}));
+ Check(plan.Find(3).ready&&plan.Find(3).picks.Count==1&&plan.Find(3).picks[0]==4,"remote pick ignored");
+ Check(Last(MsgType.DeployState).Length>0,"pick not passed on");
+ Router.Receive(3,Packet.Build(MsgType.DeployPick,w=>{w.Write(plan.token);w.Write((byte)1);w.Write((byte)0);w.Write(true);}));Check(plan.Find(3).picks[0]==4,"took someone else's commander");
+ Router.Receive(3,Packet.Build(MsgType.DeployPick,w=>{w.Write(plan.token);w.Write((byte)3);w.Write((byte)1);w.Write((byte)4);w.Write((byte)0);w.Write(true);}));Check(plan.Find(3).picks.Count==1,"more squads than the share accepted");
+ Router.Receive(3,Packet.Build(MsgType.DeployPick,w=>{w.Write(plan.token-1);w.Write((byte)1);w.Write((byte)1);w.Write(true);}));Check(plan.Find(3).picks[0]==4,"pick for an older island accepted");
+ DeployFlow.SetReady(true);DeployFlow.Update();
+ var landed=Voxels.TowerDefense.SquadSpawner.deployed;
+ Check(landed!=null&&landed.Count==2&&landed.Contains(heroes[0])&&landed.Contains(heroes[4])&&!landed.Contains(heroes[1])&&plan.done,"chosen commanders didn't land");
+ var sent=Last(MsgType.DeployState);var copy=PartyDeployment.Read(new BinaryReader(new MemoryStream(sent,1,sent.Length-1)));
+ Check(copy.done&&copy.Find(3).picks[0]==4&&copy.Find(3).quota==2,"deployment lost on the wire");
+ // A player who leaves is skipped; when time runs out the others land as they are.
+ Party(2);manager=new Voxels.TowerDefense.IslandGameplayManager();manager.states.running.active=false;prefix.Invoke(null,new object[]{manager});plan=DeployFlow.Current;
+ s.members.Remove(Id(3));DeployFlow.Update();Check(plan.Find(3).quota==0&&plan.Find(3).picks.Count==0&&!plan.done,"a player who left is still choosing");s.members.Add(Id(3));
+ Voxels.TowerDefense.SquadSpawner.deployed=null;UnityEngine.Time.unscaledTime+=DeployFlow.Timeout+1;DeployFlow.Update();
+ Check(Voxels.TowerDefense.SquadSpawner.deployed!=null&&Voxels.TowerDefense.SquadSpawner.deployed.Count==1&&plan.done,"time ran out without landing anyone");
+ // Shares: four players on a rescue island bring one squad each, the rescue's owner bringing the rescue.
+ var four=PartyDeployment.Shares(new List<List<int>>{new List<int>{0},new List<int>{1},new List<int>{2},new List<int>{3}},0,0);
+ Check(four[0]==0&&four[1]==1&&four[2]==1&&four[3]==1,"rescue island shares wrong");
+ var two=PartyDeployment.Shares(new List<List<int>>{new List<int>{0,4},new List<int>{1}},-1,1);Check(two[0]==2&&two[1]==1,"spare squad not used");
+ var plan4=PartyDeployment.Plan(1,5,new ulong[]{2,3,4,5},new List<List<int>>{new List<int>{0},new List<int>{1},new List<int>{2},new List<int>{3}},0,6,0);
+ Check(plan4.Find(2).ready&&!plan4.Find(3).ready&&plan4.Squads().Count==4&&plan4.Squads()[3]==6&&plan4.rescueOwner==2,"rescue plan wrong");
+ var picked=PartyDeployment.Toggle(new List<int>{1},4,1);Check(picked.Count==1&&picked[0]==4&&PartyDeployment.Toggle(new List<int>{1,4},1,2).Count==1,"toggle wrong");
+ var empty=PartyDeployment.Plan(1,5,new ulong[]{2},new List<List<int>>{new List<int>()},0,6,0);Check(empty.Squads().Count==0,"a rescue landed alone");
+ }
+ // Rescue islands of a party campaign point at commanders who can really be rescued.
+ static void RescueRepair(){
+ var ids=new[]{-1,2,3,4,5,-1,6,7,8,9};var meta=new bool[10];meta[2]=true;var played=new bool[10];var can=new bool[10];for(int h=4;h<10;h++)can[h]=true;
+ int changed=BadNorthMP.Game.RescueIslands.Repair(ids,meta,played,can);
+ Check(changed==2&&ids[2]==9&&ids[9]==-1&&ids[1]==-1&&ids[3]==4&&meta[2],"meta rescue island not served first");
+ ids=new[]{2,3,4,5};meta=new bool[4];played=new bool[4];
+ changed=BadNorthMP.Game.RescueIslands.Repair(ids,meta,played,can);Check(changed==2&&ids[0]==6&&ids[1]==7&&ids[2]==4,"spare commanders not used");
+ ids=new[]{2,3};meta=new bool[2];played=new[]{true,false};
+ BadNorthMP.Game.RescueIslands.Repair(ids,meta,played,can);Check(ids[0]==2&&ids[1]==4,"played island changed");
+ ids=new[]{4,5};meta=new bool[2];played=new bool[2];Check(BadNorthMP.Game.RescueIslands.Repair(ids,meta,played,can)==0&&ids[0]==4,"healthy campaign changed");
+ }
  static void Recruits(){
  // Rescued commanders go round the table: leader (2), then 3, 4, 5; disconnected players are skipped.
  Party(4);var heroes=Voxels.TowerDefense.Profile.campaign.heroes;
@@ -312,7 +361,7 @@ namespace BadNorthMP.Net {
  }
  static Voxels.TowerDefense.Island Rescue(Voxels.TowerDefense.HeroDefinition hero){var island=new Voxels.TowerDefense.Island();island.levelNode.heroDefinition=hero;return island;}
  static void Network(){
- PartyFlow.Init();RemoteDefender.Init();
+ PartyFlow.Init();RemoteDefender.Init();DeployFlow.Init();
  Check(new Voxels.TowerDefense.ProfileInternals.CampaignSave().heroes==null,"mock must reproduce native null commander list");
  Reset(1);PartyFlow.StartDraft();int released=Voxels.TowerDefense.MonoHero.destroyed;
  Voxels.TowerDefense.MonoHero.FailSetup=true;
@@ -326,7 +375,7 @@ namespace BadNorthMP.Net {
  Reset(2);SteamSession.Instance.Me=Id(2);PartyFlow.StartDraft();Check(!PartyFlow.Active,"defender started campaign");SteamSession.Instance.Me=Id(1);PartyFlow.StartDraft();Check(PartyFlow.State.phase==1&&PartyFlow.State.seats.Count==2,"host start failed");int token=PartyFlow.State.token;
  Router.Receive(1,Pick(1,token,new int[]{1},true));Check(!PartyFlow.State.AllReady,"mastermind picked defender unit");Router.Receive(2,Pick(2,token,new int[]{1},true));PartyFlow.Update();Check(PartyFlow.State.phase==1,"campaign loaded before every defender ready");Router.Receive(3,Pick(3,token,new int[]{2},true));PartyFlow.Update();Check(PartyFlow.Loading,"all ready didn't start");var begin=Last(MsgType.PartyBegin);var state=Last(MsgType.PartyState);
  SteamSession.Instance.Me=Id(2);Router.Receive(1,state);int created=Voxels.TowerDefense.Profile.creates;Router.Receive(1,begin);Check(Voxels.TowerDefense.Profile.creates==created+1,"campaign not created once");Check(Voxels.TowerDefense.Profile.activeCampaignMeta.saveSlot>=100,"solo save overwritten");Check(Voxels.TowerDefense.Profile.campaign.heroes.Count==2,"new campaign squad count");Check(Voxels.TowerDefense.Profile.campaign.heroes[0].classUpgrade==null&&Voxels.TowerDefense.Profile.campaign.heroes[1].classUpgrade==null,"starter received a class upgrade");Router.Receive(1,begin);Check(Voxels.TowerDefense.Profile.creates==created+1,"duplicate start created second campaign");
- PartyFlow.CampaignReady();Check(PartyFlow.Deployed&&PartyFlow.State.Owns(2,0)&&PartyFlow.State.Owns(3,1),"new campaign ownership wrong");var manager=new Voxels.TowerDefense.IslandGameplayManager();manager.states.running.active=false;typeof(PartyDeployPatch).GetMethod("Prefix",BindingFlags.NonPublic|BindingFlags.Static).Invoke(null,new object[]{manager});Check(Voxels.TowerDefense.SquadSpawner.deployed.Count==2&&PartyFlow.State.round==1,"party automatic deployment");manager.states.Spawning.active=true;
+ PartyFlow.CampaignReady();Check(PartyFlow.Deployed&&PartyFlow.State.Owns(2,0)&&PartyFlow.State.Owns(3,1),"new campaign ownership wrong");var manager=new Voxels.TowerDefense.IslandGameplayManager();manager.states.running.active=false;typeof(PartyDeployPatch).GetMethod("Prefix",BindingFlags.NonPublic|BindingFlags.Static).Invoke(null,new object[]{manager});ReadyAll();Check(Voxels.TowerDefense.SquadSpawner.deployed.Count==2&&PartyFlow.State.round==1,"party automatic deployment");manager.states.Spawning.active=true;
  typeof(PartyDeployPatch).GetMethod("Prefix",BindingFlags.NonPublic|BindingFlags.Static).Invoke(null,new object[]{manager});
  Check(PartyFlow.State.round==1,"duplicate EnterLevel started another deployment");
  manager.states.Spawning.active=false;

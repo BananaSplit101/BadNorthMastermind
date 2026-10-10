@@ -714,10 +714,9 @@ namespace BadNorthMP.Net
         }
 
         // A seated player who's away, or back on another version, counts as absent: their commanders rest.
-        private static bool IsMember(ulong player) =>
+        internal static bool IsMember(ulong player) =>
             Session.Members().Contains(new CSteamID(player)) && Updater.IsCompatible(new CSteamID(player));
 
-        public const int MaxSquads = 4;
 
         /// <summary>The commander waiting to be rescued on this island, or -1.</summary>
         public static int RescueHero(Island island)
@@ -744,20 +743,17 @@ namespace BadNorthMP.Net
             GameNotify.Post(text);
         }
         /// <summary>
-        /// Who deploys on an island: at most MaxSquads squads. The island's rescued commander always goes (it
-        /// needs at least one other commander, like the native loadout); every connected player gets a squad
-        /// before anyone gets a second; spare slots rotate between players from island to island. Within a
-        /// player's commanders, whoever has waited longest since their last deployment goes first.
+        /// Who can fight on an island: each seat's commanders able to this turn (connected players only, the island's
+        /// rescued commander apart), whoever has waited longest since their last deployment first. Also says whose the
+        /// rescue is (-1: no rescue, or its owner isn't here).
         /// </summary>
-        public static List<HeroDefinition> Deployment(Island island)
+        private static List<int>[] Candidates(Island island, out int rescue, out int rescueSeat)
         {
             var heroes = Profile.campaign.heroes;
-            int seatCount = State.seats.Count;
-            var candidates = new List<int>[seatCount];
-            int rescue = RescueHero(island);
-            int rescueSeat = -1;
-            bool others = false;
-            for (int s = 0; s < seatCount; s++)
+            var candidates = new List<int>[State.seats.Count];
+            rescue = RescueHero(island);
+            rescueSeat = -1;
+            for (int s = 0; s < State.seats.Count; s++)
             {
                 var seat = State.seats[s];
                 candidates[s] = new List<int>();
@@ -766,38 +762,39 @@ namespace BadNorthMP.Net
                 foreach (int id in PartyRoster.Owned(seat))
                     if (id != rescue && id >= 0 && id < heroes.Count && heroes[id].availableThisTurn) candidates[s].Add(id);
                 candidates[s].Sort((a, b) => { int c = WaitRank(b).CompareTo(WaitRank(a)); return c != 0 ? c : a.CompareTo(b); });
-                others |= candidates[s].Count > 0;
             }
-            var result = new List<HeroDefinition>();
-            if (!others) return result;
-            int slots = rescueSeat >= 0 ? MaxSquads - 1 : MaxSquads;
-            var picked = new bool[seatCount];
-            if (rescueSeat >= 0) picked[rescueSeat] = true;
-            // One squad for each player first, in seat order (the leader first).
-            for (int s = 0; s < seatCount && result.Count < slots; s++)
-                if (!picked[s] && candidates[s].Count > 0)
-                {
-                    result.Add(heroes[candidates[s][0]]);
-                    candidates[s].RemoveAt(0);
-                    picked[s] = true;
-                }
-            // Spare slots go round the table, starting with a different player each deployment.
-            int start = seatCount > 0 ? State.round % seatCount : 0;
-            for (bool added = true; added && result.Count < slots;)
-            {
-                added = false;
-                for (int step = 0; step < seatCount && result.Count < slots; step++)
-                {
-                    int s = (start + step) % seatCount;
-                    if (candidates[s].Count == 0) continue;
-                    result.Add(heroes[candidates[s][0]]);
-                    candidates[s].RemoveAt(0);
-                    added = true;
-                }
-            }
-            // The native loadout puts the island's commander in the last banner.
-            if (rescueSeat >= 0) result.Add(heroes[rescue]);
-            return result;
+            return candidates;
+        }
+
+        /// <summary>
+        /// Leader: share out an island's squads (PartyDeployment.Shares: at most MaxSquads, one per player first,
+        /// spare squads rotating, the rescue always going) with everyone on their most rested commanders. DeployFlow
+        /// then lets each player choose which of theirs go.
+        /// </summary>
+        public static PartyDeployment PlanDeployment(Island island, int token)
+        {
+            var candidates = Candidates(island, out int rescue, out int rescueSeat);
+            var players = State.seats.ConvertAll(seat => seat.player);
+            int level = island && island.levelNode != null ? island.levelNode.index : -1;
+            return PartyDeployment.Plan(token, level, players, candidates, rescueSeat, rescue, State.round);
+        }
+
+        /// <summary>The squads that go with everyone on their most rested commanders (none: nobody can fight).</summary>
+        public static List<HeroDefinition> Deployment(Island island)
+        {
+            var heroes = Profile.campaign.heroes;
+            return PlanDeployment(island, 0).Squads().ConvertAll(id => heroes[id]);
+        }
+
+        /// <summary>Leader: the chosen squads land (PartyDeployPatch held the island while everyone picked).</summary>
+        public static void DeploySquads(IslandGameplayManager manager, List<int> squads)
+        {
+            var heroes = Profile.campaign.heroes;
+            ++State.round; PublishOwnership();
+            manager.states.root.SetActive(true);
+            PreparingDeployment = true;
+            try { manager.squadSpawner.SpawnEnglishSquads(squads.ConvertAll(id => heroes[id])); }
+            finally { PreparingDeployment = false; }
         }
 
         /// <summary>
@@ -868,20 +865,14 @@ namespace BadNorthMP.Net
         private static bool Prefix(IslandGameplayManager __instance)
         {
             if (!PartyFlow.Deployed || !Roles.IsDefender || SpectatorSession.Active) return true;
-            if (__instance.states.Spawning.active || __instance.states.running.active) return false;
+            if (__instance.states.Spawning.active || __instance.states.running.active || DeployFlow.ChoosingFor(__instance)) return false;
             PartyFlow.AssignRescue(__instance.island);
-            var heroes = PartyFlow.Deployment(__instance.island);
-            if (heroes.Count == 0)
+            // Everyone has the island loaded: each player picks which of their commanders go, then they land.
+            if (!DeployFlow.Begin(__instance))
             {
                 ModLog.Warn("Party deployment refused: no available owned commanders. Advance the campaign turn.");
                 __instance.states.loadout.SetActive(true);
-                return false;
             }
-            ++PartyFlow.State.round; PartyFlow.PublishOwnership();
-            __instance.states.root.SetActive(true);
-            PartyFlow.PreparingDeployment = true;
-            try { __instance.squadSpawner.SpawnEnglishSquads(heroes); }
-            finally { PartyFlow.PreparingDeployment = false; }
             return false;
         }
     }

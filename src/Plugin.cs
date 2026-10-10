@@ -11,7 +11,7 @@ namespace BadNorthMP
     {
         public const string Id = "com.bananasplit.badnorthmp";
         public const string Name = "Bad North Multiplayer";
-        public const string Version = "1.0.4";
+        public const string Version = "1.0.5";
 
         private void Awake()
         {
@@ -34,6 +34,7 @@ namespace BadNorthMP
             gameObject.AddComponent<RemoteDefender>();
             gameObject.AddComponent<CommanderDraftScreen>();
             gameObject.AddComponent<InvitePopup>();
+            gameObject.AddComponent<DeployPanel>();
 
             ModLog.Info($"{Name} {Version} loaded");
         }

@@ -8,6 +8,32 @@ namespace BadNorthMP.UI
     /// <summary>Helpers for putting our own content into the game's uGUI widgets.</summary>
     internal static class GameUi
     {
+        /// <summary>A commander's portrait, drawn by the game's own portrait renderer (null if the game has none loaded).</summary>
+        public static MaskedSprite Portrait(Transform parent, Voxels.TowerDefense.HeroDefinition hero, float size)
+        {
+            MaskedSprite template = null;
+            foreach (var banner in Resources.FindObjectsOfTypeAll<LoadoutUIListBanner>())
+            {
+                template = Traverse.Create(banner).Field<MaskedSprite>("icon").Value;
+                if (template) break;
+            }
+            if (!template)
+                foreach (var candidate in Resources.FindObjectsOfTypeAll<MaskedSprite>())
+                    if (candidate.GetComponent<Image>()) { template = candidate; break; }
+            if (!template) return null;
+            // Only the native portrait renderer belongs here; ability/menu scripts need their original controllers.
+            var portrait = Object.Instantiate(template, parent, false);
+            foreach (var script in portrait.GetComponentsInChildren<MonoBehaviour>(true))
+                if (script != portrait && !(script is Graphic) && !(script is IMeshModifier)) Object.DestroyImmediate(script);
+            var rect = (RectTransform)portrait.transform;
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero; rect.sizeDelta = new Vector2(size, size);
+            portrait.gameObject.SetActive(true);
+            foreach (var graphic in portrait.GetComponentsInChildren<Graphic>(true)) graphic.raycastTarget = false;
+            portrait.Set(hero.graphics);
+            return portrait;
+        }
+
         /// <summary>
         /// Gives a game widget a fixed English label. Disabling the Localize component isn't enough: I2's
         /// LocalizeAll re-applies the term to every Localize, enabled or not. So remove it outright.

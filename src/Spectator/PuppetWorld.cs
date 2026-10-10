@@ -262,8 +262,17 @@ namespace BadNorthMP.Spectator
             bool isStandard = r.ReadBoolean();
             Vector3 pos = r.ReadVector3();
 
-            Agent prefab = FindPrefab(prefabName);
-            if (!prefab || !squads.TryGetValue(squadId, out Squad squad) || !squad)
+            squads.TryGetValue(squadId, out Squad squad);
+            // A defender's soldiers come from their commander's own generated soldier (its class level, upgrades and
+            // colours). Every commander's has the same name, so looking it up by name could pick another commander's.
+            Agent prefab = null;
+            if (!isStandard && squad is EnglishSquad owner && owner.hero != null && owner.hero.monoHero)
+            {
+                Agent minion = owner.hero.monoHero.minionPrefab;
+                if (minion && minion.name == prefabName) prefab = minion;
+            }
+            if (!prefab) prefab = FindPrefab(prefabName);
+            if (!prefab || !squad)
             {
                 WarnOnce("prefab " + prefabName, $"Can't mirror agent '{prefabName}' (prefab found: {(bool)prefab})");
                 return;

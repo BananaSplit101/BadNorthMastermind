@@ -67,6 +67,7 @@ namespace BadNorthMP.Net
             TurnSync.Init();
             BattleSync.Init();
             MastermindNet.Init();
+            DeployFlow.Init();
         }
 
         private void Update()
@@ -76,10 +77,12 @@ namespace BadNorthMP.Net
             DefenderTracker.Update();
             PartyFlow.Update();
             IslandVote.Update();
+            DeployFlow.Update();
             if (!Session.InLobby)
                 return;
             MastermindNet.Update();
             TurnSync.Update();
+            FriendLobbies.Publish();
 
             float now = Time.realtimeSinceStartup;
             if (now >= nextPing)

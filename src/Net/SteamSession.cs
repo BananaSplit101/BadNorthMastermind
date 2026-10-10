@@ -13,8 +13,8 @@ namespace BadNorthMP.Net
     {
         // The game's platform layer uses P2P channels 1-3 (SteamElements); stay clear of them.
         public const int Channel = 7;
-        private const int MaxMembers = 5; // one defender, one mastermind for now
-        private const string VersionKey = "bnmp_version";
+        public const int MaxMembers = 5; // the mastermind and up to four defenders
+        private const string VersionKey = FriendLobbies.VersionKey;
         private const uint EnterResponseSuccess = 1;
 
         public static SteamSession Instance { get; private set; }

@@ -78,6 +78,7 @@ namespace BadNorthMP.UI
                 return;
             }
 
+            FriendLobbies.Refresh();
             messageText.text = BuildBody();
         }
 
@@ -115,6 +116,14 @@ namespace BadNorthMP.UI
             if (Session.Ready && !Session.InLobby)
             {
                 AddButton("Host game", Session.Host);
+                // Friends' games, joined like an accepted invite.
+                int shown = 0;
+                foreach (FriendLobbies.Game game in FriendLobbies.Games)
+                {
+                    if (game.Full || shown++ >= 4) continue;
+                    CSteamID lobby = game.lobby;
+                    AddButton("Join " + game.HostName, () => Session.Join(lobby));
+                }
             }
             else if (Session.InLobby)
             {
@@ -145,7 +154,12 @@ namespace BadNorthMP.UI
             if (Spectator.SpectatorSession.Active)
                 return update + "spectating";
             if (!Session.InLobby)
-                return update + "idle";
+            {
+                // The Join buttons follow the friends' games found.
+                var games = new StringBuilder();
+                foreach (FriendLobbies.Game game in FriendLobbies.Games) games.Append(game.lobby.m_SteamID).Append(game.Full ? "f," : ",");
+                return update + "idle/" + games;
+            }
             return update + $"{(Session.IsHost ? "host" : "guest")}/{Session.Members().Count}/{(Roles.IsMastermind ? "mm" : Roles.IsDefender ? "leader" : "remote")}/{InCampaign()}/{PartyFlow.State.phase}/{PartyFlow.State.token}";
         }
 
@@ -172,9 +186,15 @@ namespace BadNorthMP.UI
             {
                 if (Session.Status != "Not connected")
                     sb.AppendLine(Session.Status).AppendLine();
-                sb.AppendLine("Host a game and invite a friend. One of you defends the islands; the other is the mastermind who decides when and where the Vikings strike.");
+                sb.AppendLine("Host a game and invite your friends: the host is the mastermind who sends the Vikings, everyone else defends the islands together.");
                 sb.AppendLine();
-                sb.Append("To join a friend, accept their invite in Steam.");
+                if (FriendLobbies.Games.Count == 0)
+                    sb.Append("No friends are in a game right now. Their games show up here to join, or accept their invite in Steam.");
+                else
+                {
+                    sb.AppendLine("Friends' games:");
+                    foreach (FriendLobbies.Game game in FriendLobbies.Games) sb.AppendLine(FriendLobbies.Describe(game));
+                }
                 return sb.ToString();
             }
 
