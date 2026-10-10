@@ -28,7 +28,8 @@ namespace BadNorthMP.UI
         private Text messageText;
         private string shownLayout;
         private float nextRefresh;
-        private readonly List<KeyValuePair<Widget, Func<string>>> dynamicLabels = new List<KeyValuePair<Widget, Func<string>>>();
+        private static bool autoOpenPending;
+        public static void RequestOpen() { autoOpenPending = true; }
 
         private static SteamSession Session => SteamSession.Instance;
         private static MultiplayerGame Game => MultiplayerGame.Instance;
@@ -38,13 +39,31 @@ namespace BadNorthMP.UI
         /// <summary>Button callback for the menu entries. Returns true so the game plays its click sound.</summary>
         public static bool Open()
         {
+            if (PartyFlow.Active && PartyFlow.State.phase == 1 && Updater.Compatible)
+            { CommanderDraftScreen.Open(); return true; }
             if (instance && !instance.overlay)
                 instance.Show();
             return true;
         }
 
+        public static void CloseForBattle()
+        {
+            autoOpenPending = false;
+            if (!instance || !instance.overlay) return;
+            var popup = instance.overlay;
+            instance.overlay = null;
+            popup.Dismiss();
+        }
+
         private void Update()
         {
+            if (autoOpenPending && Session.InLobby && (!SpectatorSession.Active || PartyFlow.State.phase == 1))
+            {
+                foreach (MainMenu menu in Resources.FindObjectsOfTypeAll<MainMenu>())
+                    if (menu.gameObject.activeInHierarchy)
+                    { autoOpenPending = false; Open(); break; }
+            }
+            if (!Session.InLobby) autoOpenPending = false;
             if (!overlay || Time.unscaledTime < nextRefresh)
                 return;
             nextRefresh = Time.unscaledTime + RefreshSeconds;
@@ -60,23 +79,38 @@ namespace BadNorthMP.UI
             }
 
             messageText.text = BuildBody();
-            foreach (var entry in dynamicLabels)
-                entry.Key.label.text = entry.Value();
         }
 
         private void Show()
         {
-            dynamicLabels.Clear();
+            if (PartyFlow.Active && PartyFlow.State.phase == 1 && Updater.Compatible)
+            { CommanderDraftScreen.Open(); return; }
             shownLayout = LayoutKey();
 
             ModalOverlay popup = ModalOverlay.GetInstance();
             overlay = popup;
             messageText = GameUi.InitPopup(popup, "Multiplayer " + Plugin.Version, BuildBody());
 
-            if (Spectator.SpectatorSession.Active)
+            // A newer version on GitHub can be installed from here at any time.
+            if (Updater.Staged) AddButton("Install and restart", Updater.Install);
+            else if (Updater.UpdateAvailable && !Updater.Busy) AddButton("Update to " + Updater.LatestVersion, Updater.ConfirmDownload);
+
+            bool versionMismatch = Session.InLobby && !Updater.Compatible;
+            if (!versionMismatch && Spectator.SpectatorSession.Active)
                 AddButton("Stop watching", Spectator.SpectatorSession.Instance.Stop);
-            else if (Session.Ready && (!Session.InLobby || Roles.IsDefender) && !InCampaign())
+            else if (Session.Ready && !Session.InLobby && !InCampaign())
                 GameUi.AddPopupButton(popup, "Play", () => { overlay = null; CampaignScreen.Open(); }, closes: true);
+
+            if (Session.InLobby && Updater.Compatible && !SpectatorSession.Active && (!InCampaign() || PartyFlow.State.phase == 1))
+            {
+                if (Session.IsHost && !PartyFlow.Active && Roles.HasMastermind)
+                {
+                    AddButton("Start", PartyCampaignPicker.Open);
+                }
+                if (Session.IsHost && PartyFlow.State.phase == 1) AddButton("Back", PartyFlow.CancelDraft);
+                if (PartyFlow.State.phase == 1) AddButton("Choose commanders", CommanderDraftScreen.Open);
+
+            }
 
             if (Session.Ready && !Session.InLobby)
             {
@@ -105,19 +139,14 @@ namespace BadNorthMP.UI
         {
             if (!Session.Ready)
                 return "wait";
+            string update = $"{Updater.UpdateAvailable}/{Updater.Busy}/{Updater.Staged}/";
+            if (Session.InLobby && !Updater.Compatible)
+                return update + "mismatch";
             if (Spectator.SpectatorSession.Active)
-                return "spectating";
+                return update + "spectating";
             if (!Session.InLobby)
-                return "idle";
-            return $"{(Session.IsHost ? "host" : "guest")}/{Session.Members().Count}/{(Roles.IsMastermind ? "mm" : Roles.IsDefender ? "leader" : "remote")}/{InCampaign()}";
-        }
-
-        private static string MastermindChoiceLabel()
-        {
-            string name = SteamSession.NameOf(Roles.MastermindId);
-            if (Roles.MastermindId == Session.Me)
-                name = "You";
-            return Roles.IsRandom ? $"Mastermind: Random ({name})" : $"Mastermind: {name}";
+                return update + "idle";
+            return update + $"{(Session.IsHost ? "host" : "guest")}/{Session.Members().Count}/{(Roles.IsMastermind ? "mm" : Roles.IsDefender ? "leader" : "remote")}/{InCampaign()}/{PartyFlow.State.phase}/{PartyFlow.State.token}";
         }
 
         private Widget AddButton(string label, Action action) => GameUi.AddPopupButton(overlay, label, action);
@@ -129,18 +158,16 @@ namespace BadNorthMP.UI
             return campaigns && campaigns.campaign;
         }
 
-        private void AddDynamicButton(Func<string> label, Action action)
-        {
-            Widget widget = AddButton(label(), action);
-            dynamicLabels.Add(new KeyValuePair<Widget, Func<string>>(widget, label));
-        }
-
         private static string BuildBody()
         {
             if (!Session.Ready)
                 return "Waiting for Steam...";
 
             var sb = new StringBuilder();
+            if (Updater.Busy || Updater.Staged)
+                sb.AppendLine(Updater.Status).AppendLine();
+            else if (Updater.UpdateAvailable)
+                sb.AppendLine($"Version {Updater.LatestVersion} is available (you have {Plugin.Version}).").AppendLine();
             if (!Session.InLobby)
             {
                 if (Session.Status != "Not connected")
@@ -158,17 +185,40 @@ namespace BadNorthMP.UI
                 sb.AppendLine($"{SteamSession.NameOf(member)}  -  {role}  ({ping})");
             }
             sb.AppendLine();
+            if (PartyFlow.Active && PartyFlow.State.phase < 3 && Updater.Compatible)
+            {
+                sb.AppendLine(PartyFlow.Status).AppendLine();
+                foreach (var seat in PartyFlow.State.seats)
+                {
+                    sb.Append(SteamSession.NameOf(new CSteamID(seat.player))).Append(": ");
+                    for (int i = 0; i < seat.choices.Length; i++)
+                    { if (i > 0) sb.Append(" + "); sb.Append(PartyFlow.ChoiceName(seat.choices[i])); }
+                    sb.AppendLine(seat.ready ? "  (Ready)" : "  (Choosing)");
+                }
+                sb.AppendLine().Append("All new squads start as militia. Classes and abilities are purchased later with campaign gold.");
+                return sb.ToString();
+            }
+            if (MultiplayerGame.HostLoading) sb.AppendLine("The host is loading the live battle...");
+
+            if (!Updater.Compatible)
+            {
+                sb.AppendLine("Everyone needs the same version to play. " + Updater.Status);
+                return sb.ToString();
+            }
 
             if (!Roles.HasMastermind)
                 sb.AppendLine("Invite a friend to play.");
             else if (Roles.IsMastermind)
-                sb.AppendLine(SpectatorSession.Active
-                    ? "You're watching the battle. Build your waves in the panel on the right."
-                    : "Stay on the main menu: the defender's battle opens here automatically, with your army panel.");
+                sb.AppendLine(SpectatorSession.ViewingCampaign
+                    ? "You're viewing the defenders' campaign. The coin opens your war chest: upgrade your Vikings and recruit commanders. The defenders vote on the next island."
+                    : SpectatorSession.Active
+                        ? "You're watching the battle. Plan your waves at the bottom of the screen; the coin at the top right opens the war chest."
+                        : PartyFlow.Deployed ? "The defender's campaign map and live battles open here automatically, with your army controls."
+                            : "Press Start to choose a multiplayer save or create a new campaign. Defenders then choose their commanders.");
             else if (Roles.IsRemoteDefender)
-                sb.AppendLine("Wait on the main menu for the campaign leader. In battle: 1-4 selects a squad; right-click a tile to send a move order. Squads have shared control.");
+                sb.AppendLine("The campaign map and battles open automatically. Click an island to vote where to go next; in battle, select your own squad and click a tile to move.");
             else
-                sb.AppendLine("Start or continue a campaign and pick an island. Your mastermind sends the Vikings: there are no normal waves while they're connected.");
+                sb.AppendLine(PartyFlow.Deployed ? "Click an island to vote where to go next. Each defender controls their own squad; the mastermind sends the Vikings." : "Wait for the mastermind to press Start, then choose your commanders.");
 
             foreach (string line in Game.RecentEvents(3))
             {
@@ -177,24 +227,6 @@ namespace BadNorthMP.UI
                 sb.AppendLine().Append(line);
             }
             return sb.ToString();
-        }
-
-        private static string DescribeDefenderBattle()
-        {
-            if (!Game.HasDefenderStatus)
-                return "Waiting for the defender...";
-            IslandStatus s = Game.DefenderStatus;
-            if (!s.onIsland)
-                return "The defender isn't in a battle yet.";
-
-            string forces = $"{s.squadsAlive} squads defending, {s.vikingsAlive} Vikings ashore.";
-            if (s.nextWave > s.waveCount)
-                return $"All {s.waveCount} waves launched. {forces}";
-            if (s.waveLaunching)
-                return $"Wave {s.nextWave} of {s.waveCount} is landing. {forces}";
-            return s.mastermindControlsWaves
-                ? $"Wave {s.nextWave} of {s.waveCount} awaits your order. {forces}"
-                : $"Wave {s.nextWave} of {s.waveCount} arrives in {s.timeToNextWave:0}s. {forces}";
         }
     }
 }

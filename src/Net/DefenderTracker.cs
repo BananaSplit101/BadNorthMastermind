@@ -31,6 +31,7 @@ namespace BadNorthMP.Net
             public int id;
             public Agent agent;
             public bool spawned, died;
+            public readonly UnitVisualStream.Sender visuals = new UnitVisualStream.Sender();
         }
 
         private class TrackedShip
@@ -57,6 +58,14 @@ namespace BadNorthMP.Net
         private static float[] houseFire = new float[0];
         private static int nextId = 1;
         private static float nextSnapshot;
+        // Each English squad's destination tile as last sent, so watchers' ordering rules match the leader's.
+        private static readonly List<NavSpot> sentTiles = new List<NavSpot>();
+        private static readonly List<NavSpot> currentTiles = new List<NavSpot>();
+        private static readonly List<EnglishSquad> tileSquads = new List<EnglishSquad>();
+        private static readonly List<EnglishSquad> sentTileSquads = new List<EnglishSquad>();
+        // Which squads could flee, as last sent; checked a few times a second.
+        private static string sentEvac = "";
+        private static float nextEvac;
 
         public static void Reset()
         {
@@ -70,6 +79,12 @@ namespace BadNorthMP.Net
             houseFlags = new byte[0];
             houseFire = new float[0];
             nextId = 1;
+            nextSnapshot = 0f;
+            UnitVisualStream.Reset();
+            sentTiles.Clear();
+            sentTileSquads.Clear();
+            sentEvac = "";
+            nextEvac = 0f;
         }
 
         // ---- Things appearing ----------------------------------------------------------------
@@ -260,10 +275,13 @@ namespace BadNorthMP.Net
                         Game.Economy.OnDefenderKilled(hero: t.agent.GetComponent<Standard>());
                     BattleStream.Send(Packet.Build(MsgType.AgentDied, w => w.Write(t.id)), reliable: true);
                 }
+                // Visuals include inactive indoor/injured units and dying/ragdoll units until destruction.
+                t.visuals.Capture(t.id, t.agent, time);
                 // Includes Vikings riding in on their ship before they spawn onto the beach.
-                if (t.agent.gameObject.activeInHierarchy && !t.died)
+                if (t.agent.gameObject.activeInHierarchy)
                     visibleAgents.Add(t);
             }
+            UnitVisualStream.FlushFrames();
             SendInPackets(MsgType.Snapshot, time, visibleAgents, AgentRecordBytes, WriteAgent);
 
             var visibleShips = new List<TrackedShip>();
@@ -298,6 +316,97 @@ namespace BadNorthMP.Net
             SendInPackets(MsgType.ProjectileSnapshot, time, flying, ProjectileRecordBytes, WriteProjectile);
 
             SendHouseChanges();
+            SendSquadTiles();
+            SendSquadEvac();
+        }
+
+        /// <summary>
+        /// Which battle squads are the mastermind's commanders (so the mastermind can find and order them), with each
+        /// one's trait and flag-bearer so every player sees the flag.
+        /// </summary>
+        public static void SendCommanders()
+        {
+            var entries = new List<int[]>();
+            foreach (var deployed in Game.Economy.DeployedCommanders)
+                if (deployed.Value && squadIds.TryGetValue(deployed.Value, out int squadId))
+                {
+                    Game.VikingCommander commander = Game.MastermindSession.Commander(deployed.Key);
+                    Agent bearer = Game.VikingTraits.FlagBearer(deployed.Value);
+                    int bearerId = bearer && agentsByAgent.TryGetValue(bearer, out TrackedAgent tracked) ? tracked.id : -1;
+                    entries.Add(new[] { deployed.Key, squadId, commander != null ? commander.trait : 0, bearerId });
+                }
+            BattleStream.Send(Packet.Build(MsgType.CommanderSquads, w =>
+            {
+                w.Write((byte)entries.Count);
+                foreach (int[] entry in entries) { w.Write(entry[0]); w.Write(entry[1]); w.Write((byte)entry[2]); w.Write(entry[3]); }
+            }), reliable: true);
+        }
+
+        /// <summary>The id watchers know a ship by (for following a commander's boat), or -1.</summary>
+        public static int ShipId(Longship ship) => ship && shipIds.TryGetValue(ship, out int id) ? id : -1;
+
+        private static void SendSquadEvac()
+        {
+            if (Time.unscaledTime < nextEvac || Profile.campaign == null)
+                return;
+            nextEvac = Time.unscaledTime + 0.25f;
+            var heroes = new List<int>();
+            var flee = new List<bool>();
+            var key = new System.Text.StringBuilder();
+            foreach (Squad candidate in GameAccess.PlayerSquads)
+            {
+                var squad = candidate as EnglishSquad;
+                if (!squad || squad.hero == null) continue;
+                int hero = Profile.campaign.heroes.IndexOf(squad.hero);
+                bool can = Game.Evacuation.CanFlee(squad);
+                heroes.Add(hero); flee.Add(can);
+                key.Append(hero).Append(can ? '+' : '-');
+            }
+            string state = key.ToString();
+            if (state == sentEvac)
+                return;
+            sentEvac = state;
+            BattleStream.Send(Packet.Build(MsgType.SquadEvac, w =>
+            {
+                w.Write((byte)heroes.Count);
+                for (int i = 0; i < heroes.Count; i++) { w.Write(heroes[i]); w.Write(flee[i]); }
+            }), reliable: true);
+        }
+
+        private static void SendSquadTiles()
+        {
+            Island island = GameAccess.CurrentIsland;
+            if (!island || Profile.campaign == null)
+                return;
+            currentTiles.Clear();
+            tileSquads.Clear();
+            foreach (Squad candidate in GameAccess.PlayerSquads)
+            {
+                var squad = candidate as EnglishSquad;
+                if (!squad || squad.hero == null || !squad.navSpotOccupant || !squad.navSpotOccupant.navSpot)
+                    continue;
+                tileSquads.Add(squad);
+                currentTiles.Add(squad.navSpotOccupant.navSpot);
+            }
+            bool changed = currentTiles.Count != sentTiles.Count;
+            for (int i = 0; !changed && i < currentTiles.Count; i++)
+                changed = currentTiles[i] != sentTiles[i] || tileSquads[i] != sentTileSquads[i];
+            if (!changed)
+                return;
+            sentTiles.Clear(); sentTiles.AddRange(currentTiles);
+            sentTileSquads.Clear(); sentTileSquads.AddRange(tileSquads);
+            var heroes = new int[tileSquads.Count];
+            var tiles = new short[tileSquads.Count];
+            for (int i = 0; i < heroes.Length; i++)
+            {
+                heroes[i] = Profile.campaign.heroes.IndexOf(tileSquads[i].hero);
+                tiles[i] = (short)island.navSpotter.navSpots.IndexOf(currentTiles[i]);
+            }
+            BattleStream.Send(Packet.Build(MsgType.SquadTiles, w =>
+            {
+                w.Write((byte)heroes.Length);
+                for (int i = 0; i < heroes.Length; i++) { w.Write(heroes[i]); w.Write(tiles[i]); }
+            }), reliable: true);
         }
 
         private static void SendInPackets<T>(MsgType type, float time, List<T> items, int recordBytes, System.Action<BinaryWriter, T> write)
@@ -327,8 +436,35 @@ namespace BadNorthMP.Net
             WriteAnimation(w, agent.animator);
             // Body drives these; the animator's transitions depend on them (otherwise Walk falls back to Idle).
             bool hasAnimator = agent.animator && agent.animator.isActiveAndEnabled;
-            w.Write((byte)(hasAnimator && agent.animator.GetBool(MovingParam) ? 1 : 0));
-            w.Write((ushort)Mathf.Clamp(Mathf.RoundToInt((hasAnimator ? agent.animator.GetFloat(SpeedParam) : 0f) * 100f), 0, 65535));
+            byte body = hasAnimator ? BodyParameters(agent.animator) : (byte)0;
+            bool hasMoving = (body & HasMovingParam) != 0, hasSpeed = (body & HasSpeedParam) != 0;
+            w.Write((byte)(hasMoving && agent.animator.GetBool(MovingParam) ? 1 : 0));
+            w.Write((ushort)Mathf.Clamp(Mathf.RoundToInt((hasSpeed ? agent.animator.GetFloat(SpeedParam) : 0f) * 100f), 0, 65535));
+        }
+
+        private const byte HasMovingParam = 1, HasSpeedParam = 2;
+
+        /// <summary>
+        /// Which of Body's parameters a controller has. Animator.parameters allocates a new array on every
+        /// call, so each controller is inspected once instead of per unit per snapshot.
+        /// </summary>
+        private static readonly Dictionary<RuntimeAnimatorController, byte> bodyParameters = new Dictionary<RuntimeAnimatorController, byte>();
+
+        private static byte BodyParameters(Animator animator)
+        {
+            RuntimeAnimatorController controller = animator.runtimeAnimatorController;
+            // An animator that hasn't initialised yet can report no parameters; don't cache that.
+            if (!controller || !animator.isInitialized)
+                return 0;
+            if (bodyParameters.TryGetValue(controller, out byte flags))
+                return flags;
+            foreach (AnimatorControllerParameter parameter in animator.parameters)
+            {
+                if (parameter.nameHash == MovingParam && parameter.type == AnimatorControllerParameterType.Bool) flags |= HasMovingParam;
+                if (parameter.nameHash == SpeedParam && parameter.type == AnimatorControllerParameterType.Float) flags |= HasSpeedParam;
+            }
+            bodyParameters[controller] = flags;
+            return flags;
         }
 
         private static void WriteShip(BinaryWriter w, TrackedShip s)

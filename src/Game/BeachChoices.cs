@@ -1,82 +1,59 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Voxels.TowerDefense;
-
+using Voxels.TowerDefense.RaidGeneration;
 namespace BadNorthMP.Game
 {
-    /// <summary>A beach the mastermind can land on.</summary>
     internal class BeachChoice
     {
         public string label;
+        public int tileIndex;
         public Vector3 center;
-        /// <summary>Landing spots on this beach, closest to its middle first.</summary>
         public List<Beaches.Beach.Pos> positions = new List<Beaches.Beach.Pos>();
     }
-
-    /// <summary>
-    /// The island's beaches in a stable order. Both players compute this from the same island geometry,
-    /// so a beach is sent over the network as its index.
-    /// </summary>
     internal static class BeachChoices
     {
         private static Island cachedIsland;
         private static List<BeachChoice> cached = new List<BeachChoice>();
-
-        private static readonly string[] Directions =
-            { "north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west" };
-
         public static List<BeachChoice> Get(Island island)
         {
-            if (island == cachedIsland && cached.Count > 0)
-                return cached;
-            cachedIsland = island;
-            cached = new List<BeachChoice>();
-            if (!island || !island.beaches)
-                return cached;
-
-            var byBeach = new Dictionary<Beaches.Beach, BeachChoice>();
-            foreach (Beaches.Beach.Pos pos in island.beaches.GetBeachPositions(0.1f))
+            if (island == cachedIsland) return cached;
+            cachedIsland = island; cached = new List<BeachChoice>();
+            if (!island || !island.beaches || !island.navSpotter) return cached;
+            var smallest = island.levelNode.possibleShips.Where(s => s).OrderBy(s => s.area).FirstOrDefault();
+            if (!smallest) return cached;
+            var points = island.beaches.GetBeachPositions(0.1f);
+            var probeObject = new GameObject("BNMP landing validation");
+            probeObject.transform.SetParent(island.runContainer, false);
+            probeObject.SetActive(false);
+            var wave = probeObject.AddComponent<Wave>();
+            wave.raid = island.raid; wave.waveStartTime = 0f; wave.timeSpreadGroup = 0f; wave.timeSpreadShip = 0f;
+            var groupObject = new GameObject("Group"); groupObject.transform.SetParent(probeObject.transform, false);
+            var group = wave.AddShipGroup(groupObject.AddComponent<ShipGroup>());
+            var landingObject = new GameObject("Landing"); landingObject.transform.SetParent(groupObject.transform, false);
+            var probe = group.AddLanding(landingObject.AddComponent<Landing>());
+            probe.Init(island); probe.timeOffset = 0f; probe.shipPrefab = smallest;
+            float speed = island.levelNode.diffiucltySettings ? island.levelNode.diffiucltySettings.shipSpeedMultiplier : 1f;
+            try
             {
-                if (pos.beach == null || !pos.navPos.valid)
-                    continue;
-                if (!byBeach.TryGetValue(pos.beach, out BeachChoice choice))
+                foreach (NavSpot spot in island.navSpotter.navSpots.OrderBy(s => s.index))
                 {
-                    choice = new BeachChoice();
-                    byBeach[pos.beach] = choice;
-                    cached.Add(choice);
+                    if (!spot || !spot.navPos.valid) continue;
+                    var choice = new BeachChoice { tileIndex = spot.index, center = spot.navPos.wPos, label = "Tile " + (spot.index + 1) };
+                    foreach (var point in points)
+                    {
+                        if (!point.navPos.valid || point.beach == null || point.beach.puddle) continue;
+                        Vector3 delta = point.navPos.wPos - choice.center;
+                        if (Mathf.Abs(delta.y) > 0.25f || Mathf.Abs(delta.x) > 0.51f || Mathf.Abs(delta.z) > 0.51f) continue;
+                        if (probe.TryPlace(point.navPos, point.dir, speed, new List<Landing>())) choice.positions.Add(point);
+                    }
+                    choice.positions.Sort((a,b) => (a.navPos.wPos-choice.center).sqrMagnitude.CompareTo((b.navPos.wPos-choice.center).sqrMagnitude));
+                    if (choice.positions.Count > 0) cached.Add(choice);
                 }
-                choice.positions.Add(pos);
             }
-
-            Vector3 islandCenter = IslandCenter(island);
-            var labelCounts = new Dictionary<string, int>();
-            foreach (BeachChoice choice in cached)
-            {
-                Vector3 sum = Vector3.zero;
-                foreach (Beaches.Beach.Pos p in choice.positions)
-                    sum += p.navPos.wPos;
-                choice.center = sum / choice.positions.Count;
-                Vector3 c = choice.center;
-                choice.positions.Sort((a, b) => (a.navPos.wPos - c).sqrMagnitude.CompareTo((b.navPos.wPos - c).sqrMagnitude));
-
-                Vector3 offset = choice.center - islandCenter;
-                float angle = Mathf.Repeat(Mathf.Atan2(offset.x, offset.z) * Mathf.Rad2Deg + 22.5f, 360f);
-                string label = Directions[(int)(angle / 45f) % 8];
-                labelCounts[label] = labelCounts.TryGetValue(label, out int n) ? n + 1 : 1;
-                choice.label = labelCounts[label] > 1 ? $"{label} {labelCounts[label]}" : label;
-            }
+            finally { Object.Destroy(probeObject); }
             return cached;
-        }
-
-        private static Vector3 IslandCenter(Island island)
-        {
-            var spots = island.navSpotter ? island.navSpotter.navSpots : null;
-            if (spots == null || spots.Count == 0)
-                return Vector3.zero;
-            Vector3 sum = Vector3.zero;
-            foreach (NavSpot spot in spots)
-                sum += spot.navPos.wPos;
-            return sum / spots.Count;
         }
     }
 }

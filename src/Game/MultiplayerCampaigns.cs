@@ -74,7 +74,7 @@ namespace BadNorthMP.Game
         /// <summary>Opens the game's own new-campaign popup (difficulty, heroes, seed) for a multiplayer slot.</summary>
         public static void StartNew()
         {
-            if (Net.SteamSession.Instance.InLobby && !Net.Roles.IsDefender) return;
+            if (Net.SteamSession.Instance.InLobby) { UI.MultiplayerScreen.Open(); return; }
             OpeningNew = true;
             try
             {
@@ -88,18 +88,34 @@ namespace BadNorthMP.Game
 
         public static void Continue(CampaignSaveMeta meta)
         {
-            if (Net.SteamSession.Instance.InLobby && !Net.Roles.IsDefender) return;
+            if (Net.SteamSession.Instance.InLobby && (!Net.Roles.IsDefender || !Net.Updater.Compatible || !Net.PartyFlow.Loading)) return;
             MetaMenuHelpers.LoadGame(meta);
         }
 
-        public static void Delete(CampaignSaveMeta meta)
+        public static void Delete(CampaignSaveMeta meta, Action done = null)
         {
             int index = meta.saveSlot - FirstSlot;
+            int slot = meta.saveSlot, number = meta.campaignNumber;
             MetaMenuHelpers.DeleteSave(meta, () =>
             {
                 if (index >= 0 && index < SlotCount)
                     Saves[index] = null;
+                DeleteMastermindData(slot, number);
+                done?.Invoke();
             });
+        }
+
+        /// <summary>The mastermind's war chest, upgrades and commanders kept for that campaign (MastermindUpgradeSave).</summary>
+        private static void DeleteMastermindData(int slot, int campaignNumber)
+        {
+            try
+            {
+                string folder = Path.Combine(BepInEx.Paths.ConfigPath, "BadNorthMP-Upgrades");
+                if (!Directory.Exists(folder)) return;
+                foreach (string file in Directory.GetFiles(folder, $"*-{slot}-*-{campaignNumber}.bin*"))
+                    File.Delete(file);
+            }
+            catch (Exception e) { ModLog.Warn("Couldn't delete the mastermind data of a deleted campaign: " + e.Message); }
         }
 
         /// <summary>Keep the list current after the game saves a multiplayer campaign.</summary>

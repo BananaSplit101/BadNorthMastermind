@@ -35,6 +35,11 @@ namespace BadNorthMP.Net
         private Callback<GameLobbyJoinRequested_t> lobbyJoinRequested;
         private Callback<GameRichPresenceJoinRequested_t> richPresenceJoinRequested;
         private Callback<P2PSessionRequest_t> p2pSessionRequest;
+        private Callback<P2PSessionConnectFail_t> p2pSessionFailed;
+        private readonly Dictionary<CSteamID, float> sendFailureLogged = new Dictionary<CSteamID, float>();
+
+        /// <summary>A lobby member's P2P session was dropped and will be renegotiated; resend anything they must have.</summary>
+        public event Action<CSteamID> ConnectionReset = delegate { };
         private CallResult<LobbyCreated_t> lobbyCreated;
 
         private CSteamID pendingLobby = CSteamID.Nil;
@@ -46,6 +51,7 @@ namespace BadNorthMP.Net
         {
             Instance = this;
             launchLobby = ParseConnectLobby(Environment.GetCommandLineArgs());
+            if (launchLobby == 0) launchLobby = Updater.ConsumeRejoin();
         }
 
         private void Update()
@@ -81,6 +87,7 @@ namespace BadNorthMP.Net
             lobbyJoinRequested = Callback<GameLobbyJoinRequested_t>.Create(OnLobbyJoinRequested);
             richPresenceJoinRequested = Callback<GameRichPresenceJoinRequested_t>.Create(OnRichPresenceJoinRequested);
             p2pSessionRequest = Callback<P2PSessionRequest_t>.Create(OnP2PSessionRequest);
+            p2pSessionFailed = Callback<P2PSessionConnectFail_t>.Create(OnP2PSessionFailed);
             lobbyCreated = CallResult<LobbyCreated_t>.Create(OnLobbyCreated);
         }
 
@@ -132,8 +139,7 @@ namespace BadNorthMP.Net
             SteamMatchmaking.LeaveLobby(Lobby);
             SteamFriends.SetRichPresence("connect", null);
             Lobby = CSteamID.Nil;
-            // Include the caller: a host once left unexpectedly right after a guest joined.
-            ModLog.Info($"Left lobby: {status}\n{new System.Diagnostics.StackTrace(1, false)}");
+            ModLog.Info($"Left lobby: {status}");
             LobbyChanged();
         }
 
@@ -168,7 +174,22 @@ namespace BadNorthMP.Net
             if (!InLobby || to == Me)
                 return;
             var mode = reliable ? EP2PSend.k_EP2PSendReliable : EP2PSend.k_EP2PSendUnreliableNoDelay;
-            SteamNetworking.SendP2PPacket(to, data, (uint)data.Length, mode, Channel);
+            if (SteamNetworking.SendP2PPacket(to, data, (uint)data.Length, mode, Channel)) return;
+            // At most one line per player every 10 seconds.
+            if (sendFailureLogged.TryGetValue(to, out float last) && Time.unscaledTime - last < 10f) return;
+            sendFailureLogged[to] = Time.unscaledTime;
+            ModLog.Warn($"Steam refused a {data.Length}-byte message to {NameOf(to)}");
+        }
+
+        /// <summary>
+        /// Drop the P2P session with a player so the next message negotiates a fresh one. Sessions outlive a
+        /// player's game restart (an update), and messages sent into the old one are silently lost.
+        /// </summary>
+        public void ResetConnection(CSteamID user)
+        {
+            if (user == Me || user == CSteamID.Nil) return;
+            SteamNetworking.CloseP2PSessionWithUser(user);
+            ConnectionReset(user);
         }
 
         public void Broadcast(byte[] data, bool reliable = true)
@@ -235,22 +256,14 @@ namespace BadNorthMP.Net
             }
 
             Lobby = lobby;
-            if (!IsHost)
-            {
-                string hostVersion = SteamMatchmaking.GetLobbyData(lobby, VersionKey);
-                if (hostVersion != Plugin.Version)
-                {
-                    Leave($"Version mismatch: host has {(string.IsNullOrEmpty(hostVersion) ? "?" : hostVersion)}, you have {Plugin.Version}");
-                    ModLog.Error(Status);
-                    return;
-                }
-            }
+            SteamMatchmaking.SetLobbyMemberData(lobby, "bnmp_client_version", Plugin.Version);
 
             // Lets friends use "Join Game" from their Steam friends list.
             SteamFriends.SetRichPresence("connect", "+connect_lobby " + lobby.m_SteamID);
             Status = IsHost ? "Hosting" : $"Connected to {NameOf(Owner)}";
             ModLog.Info($"Entered lobby {lobby.m_SteamID} as {(IsHost ? "host" : "guest")}");
             LobbyChanged();
+            UI.MultiplayerScreen.RequestOpen();
         }
 
         private void OnLobbyChatUpdate(LobbyChatUpdate_t update)
@@ -260,6 +273,8 @@ namespace BadNorthMP.Net
             var user = new CSteamID(update.m_ulSteamIDUserChanged);
             bool entered = (update.m_rgfChatMemberStateChange & 1) != 0;
             ModLog.Info($"{NameOf(user)} {(entered ? "joined" : "left")}");
+            // A player who left (or restarted to update) must not keep the old session: anything sent into it is lost.
+            if (!entered && user != Me) SteamNetworking.CloseP2PSessionWithUser(user);
             LobbyChanged();
         }
 
@@ -290,6 +305,14 @@ namespace BadNorthMP.Net
         {
             if (Members().Contains(request.m_steamIDRemote))
                 SteamNetworking.AcceptP2PSessionWithUser(request.m_steamIDRemote);
+        }
+
+        private void OnP2PSessionFailed(P2PSessionConnectFail_t failure)
+        {
+            CSteamID user = failure.m_steamIDRemote;
+            if (!InLobby || !Members().Contains(user)) return; // someone who left: expected
+            ModLog.Warn($"Lost the connection to {NameOf(user)} (Steam P2P error {failure.m_eP2PSessionError}); reconnecting");
+            ResetConnection(user);
         }
 
         private static ulong ParseConnectLobby(string[] args)

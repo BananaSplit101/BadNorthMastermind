@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.IO;
 using Steamworks;
 using UnityEngine;
 using BadNorthMP.UI;
@@ -8,27 +7,18 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Lobby-level game flow: pings, the defender's battle status, wave requests and the event log.
-    /// The defender's game runs the battle; the mastermind decides when (and later what) Vikings attack.
+    /// Lobby-level flow: wires up the message handlers, pings everyone, keeps a short event log (joins, leaves,
+    /// roles) and runs the per-frame updates of the multiplayer systems.
     /// </summary>
     internal class MultiplayerGame : MonoBehaviour
     {
         private const float PingInterval = 2f;
-        private const float StatusInterval = 0.5f;
         private const int MaxEvents = 8;
 
         public static MultiplayerGame Instance { get; private set; }
 
-        /// <summary>Defender option: while a mastermind is connected, waves only launch when they say so.</summary>
-        public bool mastermindControlEnabled = true;
-
-        /// <summary>Read by the Raid.MaybeLaunchWaves patch.</summary>
-        public static bool MastermindControlsWaves =>
-            Instance && Instance.mastermindControlEnabled && Roles.IsDefender && Roles.HasMastermind;
-
-        /// <summary>Latest battle snapshot from the defender (mastermind only).</summary>
-        public IslandStatus DefenderStatus { get; private set; }
-        public bool HasDefenderStatus { get; private set; }
+        /// <summary>The campaign leader plays against a mastermind: the game's own wave timer never sends a wave.</summary>
+        public static bool MastermindControlsWaves => Roles.IsDefender && Roles.HasMastermind;
 
         public IEnumerable<string> RecentEvents(int count)
         {
@@ -44,8 +34,8 @@ namespace BadNorthMP.Net
         private CSteamID knownOwner = CSteamID.Nil;
         private CSteamID lastMastermind = CSteamID.Nil;
         private float nextPing;
-        private float nextStatus;
 
+        public static bool HostLoading { get; private set; }
         private void Awake() => Instance = this;
 
         private void Start()
@@ -61,37 +51,35 @@ namespace BadNorthMP.Net
             });
             Router.On(MsgType.Pong, (sender, r) =>
                 pingMs[sender.m_SteamID] = (Time.realtimeSinceStartup - r.ReadSingle()) * 1000f);
-            Router.On(MsgType.Chat, (sender, r) => AddEvent($"{SteamSession.NameOf(sender)}: {r.ReadString()}"));
-            Router.On(MsgType.Status, (sender, r) =>
+            Router.On(MsgType.HostLoading, (sender, reader) =>
             {
-                if (sender != Roles.DefenderId)
-                    return;
-                DefenderStatus = IslandStatus.Read(r);
-                HasDefenderStatus = true;
-            });
-            Router.On(MsgType.WaveRequest, (sender, r) =>
-            {
-                if (Roles.IsDefender && sender == Roles.MastermindId)
-                    HandleWaveRequest(sender);
+                if (sender != Roles.MastermindId) return;
+                HostLoading = reader.ReadBoolean();
+                bool ready = reader.ReadBoolean();
+                Announce(HostLoading ? "The host is loading the live battle..." : ready
+                    ? "The host is ready and watching the battle." : "The host could not finish loading the battle.");
             });
             RemoteDefender.Init();
+            PartyUpgrades.Init();
+            IslandVote.Init();
+            PartyFlow.Init();
+            LoadGate.Init();
+            TurnSync.Init();
             BattleSync.Init();
             MastermindNet.Init();
-            Router.On(MsgType.Notice, (sender, r) =>
-            {
-                if (sender == Roles.DefenderId)
-                    AddEvent(r.ReadString());
-            });
         }
 
         private void Update()
         {
-            // Recording runs even without a lobby, so the last battle can be replayed solo (F11).
+            GameNotify.Update();
             BattleStream.Update();
             DefenderTracker.Update();
+            PartyFlow.Update();
+            IslandVote.Update();
             if (!Session.InLobby)
                 return;
             MastermindNet.Update();
+            TurnSync.Update();
 
             float now = Time.realtimeSinceStartup;
             if (now >= nextPing)
@@ -99,35 +87,10 @@ namespace BadNorthMP.Net
                 nextPing = now + PingInterval;
                 Session.Broadcast(Packet.Build(MsgType.Ping, w => w.Write(now)), reliable: false);
             }
-            if (Roles.IsDefender && Roles.HasMastermind && now >= nextStatus)
-            {
-                nextStatus = now + StatusInterval;
-                IslandStatus status = BuildStatus();
-                Session.Send(Roles.MastermindId, Packet.Build(MsgType.Status, status.Write), reliable: false);
-            }
         }
 
         public string PingText(CSteamID user) =>
             pingMs.TryGetValue(user.m_SteamID, out float ms) ? $"{ms:0} ms" : "...";
-
-        // ---- Actions from the UI -------------------------------------------------------------
-
-        public void RequestWave()
-        {
-            if (Roles.IsMastermind)
-                Session.Send(Roles.DefenderId, Packet.Build(MsgType.WaveRequest));
-        }
-
-        public void SendChat(string text)
-        {
-            text = text.Trim();
-            if (text.Length == 0)
-                return;
-            if (text.Length > 200)
-                text = text.Substring(0, 200);
-            Session.Broadcast(Packet.Build(MsgType.Chat, w => w.Write(text)));
-            AddEvent($"{SteamFriends.GetPersonaName()}: {text}");
-        }
 
         // ---- Lobby events --------------------------------------------------------------------
 
@@ -135,9 +98,9 @@ namespace BadNorthMP.Net
         {
             if (!Session.InLobby)
             {
+                HostLoading = false;
                 knownOwner = CSteamID.Nil;
                 events.Clear();
-                HasDefenderStatus = false;
                 pingMs.Clear();
                 knownMembers.Clear();
                 lastMastermind = CSteamID.Nil;
@@ -174,7 +137,6 @@ namespace BadNorthMP.Net
             knownMembers.Clear();
             knownMembers.AddRange(members);
 
-            Roles.OnMembersChanged();
             OnRolesMaybeChanged();
         }
 
@@ -187,40 +149,6 @@ namespace BadNorthMP.Net
             AddEvent(Roles.IsMastermind
                 ? "You are the mastermind."
                 : $"You defend. {SteamSession.NameOf(Roles.MastermindId)} is the mastermind.");
-        }
-
-        // ---- Defender side -------------------------------------------------------------------
-
-        private void HandleWaveRequest(CSteamID requester)
-        {
-            string name = SteamSession.NameOf(requester);
-            bool ok = GameAccess.TryLaunchNextWave(out string result);
-            string notice = ok ? $"{name} {result}!" : $"{name}'s wave request refused: {result}";
-            ModLog.Info(notice);
-            if (ok)
-                Announce(notice);
-            else
-                AddEvent(notice);
-            Session.Send(requester, Packet.Build(MsgType.Notice, w => w.Write(notice)));
-        }
-
-        private static IslandStatus BuildStatus()
-        {
-            var status = new IslandStatus { mastermindControlsWaves = MastermindControlsWaves };
-            Island island = GameAccess.CurrentIsland;
-            if (!island || island.state != Island.State.Playing || !island.raid || island.raid.waves == null)
-                return status;
-
-            Raid raid = island.raid;
-            int index = GameAccess.RaidWaveIndex(raid);
-            status.onIsland = true;
-            status.waveCount = raid.waves.Count;
-            status.nextWave = index + 1;
-            status.waveLaunching = index < raid.waves.Count && raid.waves[index].triggered;
-            status.squadsAlive = GameAccess.PlayerSquads.Count;
-            status.vikingsAlive = island.vikings ? island.vikings.agents.Count : 0;
-            status.timeToNextWave = raid.GetTimeToNextWave();
-            return status;
         }
 
         // ---- Event log -----------------------------------------------------------------------

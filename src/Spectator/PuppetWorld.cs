@@ -51,6 +51,7 @@ namespace BadNorthMP.Spectator
         {
             public Agent agent;
             public Vector3 spawnPos;
+            public readonly UnitVisualReceiver visuals = new UnitVisualReceiver();
         }
 
         private class ShipPuppet : Mirror
@@ -60,6 +61,11 @@ namespace BadNorthMP.Spectator
 
         private static readonly Queue<byte[]> buffered = new Queue<byte[]>();
         private static readonly Dictionary<int, Squad> squads = new Dictionary<int, Squad>();
+        // The mastermind's Viking commanders: commander id -> mirrored squad id.
+        private static readonly Dictionary<int, int> commanderSquads = new Dictionary<int, int>();
+        // Commander flag-bearers (agent id -> trait) still waiting for their mirrored Viking, and those that have one.
+        private static readonly Dictionary<int, int> pendingFlags = new Dictionary<int, int>();
+        private static readonly HashSet<int> flagged = new HashSet<int>();
         private static readonly Dictionary<int, Puppet> puppets = new Dictionary<int, Puppet>();
         private static readonly Dictionary<int, ShipPuppet> shipPuppets = new Dictionary<int, ShipPuppet>();
         private static readonly Dictionary<int, ShipPuppet> projectilePuppets = new Dictionary<int, ShipPuppet>();
@@ -67,18 +73,12 @@ namespace BadNorthMP.Spectator
         private static readonly Dictionary<string, ReusableEffect> effects = new Dictionary<string, ReusableEffect>();
         private static readonly Dictionary<string, Agent> prefabs = new Dictionary<string, Agent>();
         private static readonly HashSet<string> warned = new HashSet<string>();
-        private static List<KeyValuePair<float, byte[]>> replay;
-        private static int replayIndex;
-        private static float replayStart = -1f;
         private static float latestStreamTime = -1f;
         private static float renderTime = -1f;
 
-        public static int PuppetCount => puppets.Count;
-        public static int ShipCount => shipPuppets.Count;
-
         private static bool Ready => SpectatorSession.Active && SpectatorSession.IslandReady();
 
-        /// <summary>A battle message from the network (or replay). Held until the island has loaded.</summary>
+        /// <summary>A battle message from the network. Held until the island has loaded.</summary>
         public static void Receive(byte[] packet)
         {
             if (Ready)
@@ -89,35 +89,46 @@ namespace BadNorthMP.Spectator
             // Transforms are stale by the time the island loads; only keep the events.
             var type = (MsgType)packet[0];
             bool transient = type == MsgType.Snapshot || type == MsgType.ShipSnapshot || type == MsgType.ProjectileSnapshot
-                || type == MsgType.Sound || type == MsgType.Effect;
+                || type == MsgType.Sound || type == MsgType.Effect || type == MsgType.Dust
+                || type == (MsgType)30 || type == (MsgType)32
+                || type == UnitVisualStream.AnimatorFrame || type == UnitVisualStream.NodeFrame || type == UnitVisualStream.AgentFrame;
             if (!transient && buffered.Count < MaxBuffered)
                 buffered.Enqueue(packet);
         }
 
-        public static void SetReplay(List<KeyValuePair<float, byte[]>> records)
-        {
-            replay = records;
-            replayIndex = 0;
-            replayStart = -1f;
-        }
-
         public static void Reset(bool keepBuffered = false)
         {
+            if (SpectatorSession.Active) Net.SelectionLifecycle.Clear();
+            Net.NativeDefenderControls.Reset();
             if (!keepBuffered) buffered.Clear();
-            squads.Clear();
+            foreach (Puppet p in puppets.Values)
+                if (p.agent)
+                {
+                    p.visuals.Release(p.agent);
+                    p.agent.gameObject.SetActive(false);
+                    Destroy(p.agent.gameObject);
+                }
             puppets.Clear();
+            foreach (Squad squad in squads.Values) if (squad) Destroy(squad.gameObject);
+            squads.Clear();
+            commanderSquads.Clear();
+            pendingFlags.Clear();
+            flagged.Clear();
+            foreach (ShipPuppet ship in shipPuppets.Values) if (ship.go) Destroy(ship.go);
             shipPuppets.Clear();
+            foreach (ShipPuppet projectile in projectilePuppets.Values) if (projectile.go) Destroy(projectile.go);
             projectilePuppets.Clear();
             projectilePrefabs.Clear();
             effects.Clear();
             prefabs.Clear();
             warned.Clear();
-            replay = null;
+            VisualOnlyPrefab.Reset();
+            CoinVisuals.Reset();
             latestStreamTime = -1f;
             renderTime = -1f;
         }
 
-        private void Update()
+        private void LateUpdate()
         {
             if (!Ready)
                 return;
@@ -125,18 +136,10 @@ namespace BadNorthMP.Spectator
             while (buffered.Count > 0)
                 Handle(buffered.Dequeue());
 
-            if (replay != null && replay.Count > 0)
-            {
-                if (replayStart < 0)
-                    replayStart = Time.unscaledTime - replay[0].Key;
-                float now = Time.unscaledTime - replayStart;
-                while (replayIndex < replay.Count && replay[replayIndex].Key <= now)
-                    Handle(replay[replayIndex++].Value);
-            }
-
             AdvanceClock(Time.unscaledDeltaTime);
             if (renderTime < 0)
                 return;
+            if (pendingFlags.Count > 0) AttachFlags();
             foreach (Puppet p in puppets.Values)
                 ApplyAgent(p);
             foreach (ShipPuppet s in shipPuppets.Values)
@@ -175,7 +178,20 @@ namespace BadNorthMP.Spectator
                         case MsgType.Snapshot: OnSnapshot(r); break;
                         case MsgType.HouseState: OnHouseState(r.ReadByte(), r.ReadByte(), r.ReadUInt16() / 1000f); break;
                         case MsgType.Dust: Singleton<DustParticles>.instance.SpawnParticles(r.ReadVector3(), r.ReadVector3()); break;
+                        case MsgType.SquadTiles: Net.NativeDefenderControls.ApplyTiles(r); break;
+                        case MsgType.SquadEvac: Net.NativeDefenderControls.ApplyEvac(r); break;
+                        case MsgType.CommanderSquads:
+                            commanderSquads.Clear();
+                            for (int count = r.ReadByte(), i = 0; i < count; i++)
+                            {
+                                commanderSquads[r.ReadInt32()] = r.ReadInt32();
+                                int trait = r.ReadByte(), bearer = r.ReadInt32();
+                                if (trait > 0 && bearer >= 0 && !flagged.Contains(bearer)) pendingFlags[bearer] = trait;
+                            }
+                            AttachFlags();
+                            break;
                         case MsgType.ShipSpawn: OnShipSpawn(r.ReadInt32(), r.ReadString()); break;
+                        case MsgType.SailIn: Game.SailIn.Received(r.ReadByte(), r.ReadInt32(), r.ReadVector3()); break;
                         case MsgType.ShipGone: OnShipGone(r.ReadInt32()); break;
                         case MsgType.ShipSnapshot: OnShipSnapshot(r); break;
                         case MsgType.ProjectileSpawn: OnProjectileSpawn(r.ReadInt32(), r.ReadString()); break;
@@ -183,6 +199,18 @@ namespace BadNorthMP.Spectator
                         case MsgType.ProjectileSnapshot: OnProjectileSnapshot(r); break;
                         case MsgType.Sound: OnSound(r); break;
                         case MsgType.Effect: OnEffect(r); break;
+                        case UnitVisualStream.NodeDefinition:
+                            if (puppets.TryGetValue(r.ReadInt32(), out Puppet definition)) definition.visuals.Define(r);
+                            break;
+                        case UnitVisualStream.AnimatorFrame:
+                        case UnitVisualStream.NodeFrame:
+                        case UnitVisualStream.AgentFrame: OnVisualFrame((MsgType)packet[0], r); break;
+                        case UnitVisualStream.NodeGone:
+                            if (puppets.TryGetValue(r.ReadInt32(), out Puppet removed)) removed.visuals.Remove(r.ReadUInt16());
+                            break;
+                        case (MsgType)30:
+                        case (MsgType)31:
+                        case (MsgType)32: CoinVisuals.Receive((MsgType)packet[0], r); break;
                     }
                 }
             }
@@ -190,6 +218,15 @@ namespace BadNorthMP.Spectator
             {
                 WarnOnce("handle " + (MsgType)packet[0], $"Puppet world couldn't handle {(MsgType)packet[0]}: {e}");
             }
+        }
+
+        private static readonly Func<int, UnitVisualReceiver> FindVisuals =
+            id => puppets.TryGetValue(id, out Puppet puppet) ? puppet.visuals : null;
+
+        private static void OnVisualFrame(MsgType type, BinaryReader r)
+        {
+            float time = UnitVisualReceiver.ReceivePacket(type, r, FindVisuals);
+            latestStreamTime = Mathf.Max(latestStreamTime, time);
         }
 
         private static void OnSquadSpawn(BinaryReader r)
@@ -233,12 +270,18 @@ namespace BadNorthMP.Spectator
             }
 
             Agent agent = squad.CreateAgent(prefab, MakeNavPos(squad.faction.island, pos));
+            VisualOnlyPrefab.PrepareAgent(agent);
+            agent.onThrow = null;
+            agent.onStartThrow = null;
+            agent.animationAction = null;
             if (isStandard && squad is EnglishSquad english)
                 english.standard = agent.GetComponent<Standard>();
             if (squad.faction.side != Faction.Side.English)
             {
                 // Landing.Spawn sets this; VikingSquadDifficulty and others read it when the agent spawns.
                 VikingReference reference = squad.faction.island.levelNode.enemies.Find(v => v && v.agent && v.agent.name == prefabName);
+                // Mastermind waves and commanders can bring any unlocked type, not only the island's own enemies.
+                if (!reference) reference = AnyVikingReference(prefabName);
                 if (reference)
                     agent.gameObject.GetOrAddComponent<VikingAgent>().vikingReference = reference;
                 else
@@ -249,19 +292,36 @@ namespace BadNorthMP.Spectator
             puppets[agentId] = new Puppet { agent = agent, animator = agent.animator, spawnPos = pos };
         }
 
+        private static readonly Dictionary<string, VikingReference> vikingReferences = new Dictionary<string, VikingReference>();
+
+        private static VikingReference AnyVikingReference(string prefabName)
+        {
+            if (vikingReferences.TryGetValue(prefabName, out VikingReference found) && found) return found;
+            foreach (VikingReference candidate in Resources.FindObjectsOfTypeAll<VikingReference>())
+                if (candidate && candidate.agent && candidate.agent.name == prefabName) { found = candidate; break; }
+            if (found) vikingReferences[prefabName] = found;
+            return found;
+        }
+
         private static void OnAgentSpawned(int id)
         {
             if (puppets.TryGetValue(id, out Puppet p) && p.agent)
             {
                 p.agent.gameObject.SetActive(true);
                 p.agent.Spawn();
+                VisualOnlyPrefab.PrepareAgent(p.agent);
+                if (p.agent.squad is EnglishSquad english && english.heroAgent == p.agent)
+                    Net.NativeDefenderControls.InitializeSquad(english);
             }
         }
 
         private static void OnAgentDied(int id)
         {
             if (puppets.TryGetValue(id, out Puppet p) && p.agent && p.agent.deadState != null)
+            {
+                p.agent.navPos = MakeNavPos(GameAccess.CurrentIsland, p.agent.transform.position);
                 p.agent.deadState.SetActive(true);
+            }
         }
 
         private static void OnAgentGone(int id, bool died)
@@ -271,12 +331,14 @@ namespace BadNorthMP.Spectator
             puppets.Remove(id);
             if (!p.agent)
                 return;
+            p.visuals.Release(p.agent);
 
             Death death = died ? p.agent.GetComponent<Death>() : null;
             if (death && p.agent.gameObject.activeInHierarchy)
             {
                 try
                 {
+                    p.agent.navPos = MakeNavPos(GameAccess.CurrentIsland, p.agent.transform.position);
                     death.Die(); // corpse, blood and FinalDeath, like the real thing
                     return;
                 }
@@ -306,7 +368,7 @@ namespace BadNorthMP.Spectator
 
                 if (!puppets.TryGetValue(id, out Puppet p) || !p.agent)
                     continue;
-                p.agent.health = health * p.agent.maxHealth;
+                if (!p.visuals.HasAgentFrame) p.agent.health = health * p.agent.maxHealth;
                 p.Add(new Sample { time = time, pos = pos, rot = rot, anim = anim, animTime = animTime, moving = moving, speed = speed });
             }
         }
@@ -323,6 +385,11 @@ namespace BadNorthMP.Spectator
 
             GameObject go = Instantiate(prefab.gameObject, island.runContainer);
             go.SetActive(false);
+            foreach (Animator animator in go.GetComponentsInChildren<Animator>(true))
+            {
+                animator.fireEvents = false;
+                animator.applyRootMotion = false;
+            }
             // A visual copy only: no sailing logic, no nav mesh, no collisions.
             var longship = go.GetComponent<Longship>();
             if (longship.navMeshFilter && longship.navMeshFilter.GetComponent<MeshRenderer>())
@@ -335,6 +402,10 @@ namespace BadNorthMP.Spectator
             ExtraRenderers.InitializeAll(go.transform);
             shipPuppets[id] = new ShipPuppet { go = go, animator = go.GetComponent<Animator>() };
         }
+
+        /// <summary>A mirrored longship, for following a commander's boat; null once it's gone.</summary>
+        public static Transform ShipTransform(int id) =>
+            shipPuppets.TryGetValue(id, out ShipPuppet ship) && ship.go && ship.go.activeInHierarchy ? ship.go.transform : null;
 
         private static void OnShipGone(int id)
         {
@@ -373,15 +444,7 @@ namespace BadNorthMP.Spectator
                 WarnOnce("projectile " + prefabName, $"Can't mirror projectile '{prefabName}'");
                 return;
             }
-            GameObject go = Instantiate(prefab, GameAccess.CurrentIsland.runContainer);
-            go.SetActive(false);
-            // Visual only: no flight logic, pooling, physics or hits.
-            foreach (MonoBehaviour behaviour in go.GetComponentsInChildren<MonoBehaviour>(true))
-                behaviour.enabled = false;
-            foreach (Collider c in go.GetComponentsInChildren<Collider>(true))
-                c.enabled = false;
-            foreach (Rigidbody body in go.GetComponentsInChildren<Rigidbody>(true))
-                body.isKinematic = true;
+            GameObject go = VisualOnlyPrefab.Clone(prefab, GameAccess.CurrentIsland.runContainer);
             projectilePuppets[id] = new ShipPuppet { go = go };
         }
 
@@ -412,16 +475,7 @@ namespace BadNorthMP.Spectator
 
         private static GameObject FindProjectilePrefab(string name)
         {
-            if (projectilePrefabs.TryGetValue(name, out GameObject found) && found)
-                return found;
-            // Templates are the inactive, unparented pool sources (and prefab assets) with this exact name.
-            foreach (SelfPoolingPrefab candidate in Resources.FindObjectsOfTypeAll<SelfPoolingPrefab>())
-                if (candidate && candidate.name == name) { found = candidate.gameObject; break; }
-            if (!found)
-                foreach (PoolablePrefab candidate in Resources.FindObjectsOfTypeAll<PoolablePrefab>())
-                    if (candidate && candidate.name == name) { found = candidate.gameObject; break; }
-            projectilePrefabs[name] = found;
-            return found;
+            return VisualOnlyPrefab.Find(name);
         }
 
         // ---- Sounds and effects ----------------------------------------------------------------
@@ -537,21 +591,75 @@ namespace BadNorthMP.Spectator
             }
         }
 
+        /// <summary>A commander's trait flag on its mirrored flag-bearer, once that Viking exists here.</summary>
+        private static void AttachFlags()
+        {
+            List<int> done = null;
+            foreach (var pending in pendingFlags)
+                if (puppets.TryGetValue(pending.Key, out Puppet p) && p.agent)
+                {
+                    Game.VikingFlag.Attach(p.agent, (Game.VikingTrait)pending.Value);
+                    flagged.Add(pending.Key);
+                    (done = done ?? new List<int>()).Add(pending.Key);
+                }
+            if (done != null) foreach (int id in done) pendingFlags.Remove(id);
+        }
+
+        /// <summary>Whether this commander's squad is known here (it has landed or is on its way).</summary>
+        public static bool CommanderKnown(int commanderId) =>
+            commanderSquads.TryGetValue(commanderId, out int squadId) && squads.TryGetValue(squadId, out Squad squad) && squad;
+
+        /// <summary>Where a deployed commander's living Vikings are (their average position).</summary>
+        public static bool CommanderPosition(int commanderId, out Vector3 position)
+        {
+            position = Vector3.zero;
+            if (!commanderSquads.TryGetValue(commanderId, out int squadId) || !squads.TryGetValue(squadId, out Squad squad))
+                return false;
+            return SquadPosition(squad, out position);
+        }
+
+        /// <summary>How many of a deployed commander's Vikings are alive on the island (0 while still at sea).</summary>
+        public static int CommanderAlive(int commanderId) =>
+            commanderSquads.TryGetValue(commanderId, out int squadId) && squads.TryGetValue(squadId, out Squad squad) ? SquadAlive(squad) : 0;
+
+        public static int SquadAlive(Squad squad)
+        {
+            int count = 0;
+            if (squad)
+                foreach (Agent agent in squad.agents)
+                    if (agent && agent.gameObject.activeInHierarchy && (agent.deadState == null || !agent.deadState.active)) count++;
+            return count;
+        }
+
+        /// <summary>The average position of a squad's living Vikings (false if none are left).</summary>
+        public static bool SquadPosition(Squad squad, out Vector3 position)
+        {
+            position = Vector3.zero;
+            if (!squad) return false;
+            int count = 0;
+            foreach (Agent agent in squad.agents)
+                if (agent && agent.gameObject.activeInHierarchy && (agent.deadState == null || !agent.deadState.active))
+                { position += agent.transform.position; count++; }
+            if (count == 0) return false;
+            position /= count;
+            return true;
+        }
+
         // ---- Per-frame -----------------------------------------------------------------------
 
         private static void ApplyAgent(Puppet p)
         {
-            if (!p.agent || !SampleAt(p, out Sample s))
-                return;
-            if (!p.agent.gameObject.activeSelf)
-                p.agent.gameObject.SetActive(true);
-            if (p.agent.deadState != null && p.agent.deadState.active)
-                return; // the native death animation plays from where it fell
-            Transform tr = p.agent.transform;
-            tr.position = s.pos;
-            tr.rotation = s.rot;
-            p.agent.wPos = s.pos;
-            PlayFrame(p.animator, s, agentParams: true);
+            if (!p.agent) return;
+            if (SampleAt(p, out Sample s))
+            {
+                if (!p.visuals.HasAgentFrame && !p.agent.gameObject.activeSelf) p.agent.gameObject.SetActive(true);
+                Transform tr = p.agent.transform;
+                tr.position = s.pos; tr.rotation = s.rot; p.agent.wPos = s.pos;
+                // Puppets have no navigation simulation. Constructing NavPos searches every
+                // island triangle; do it for corpse placement, never for each rendered frame.
+                if (!p.visuals.HasAgentFrame) PlayFrame(p.animator, s, agentParams: true);
+            }
+            p.visuals.Apply(p.agent, renderTime);
         }
 
         private static void ApplyShip(ShipPuppet ship)
@@ -613,10 +721,14 @@ namespace BadNorthMP.Spectator
             if (agentParams)
             {
                 // Without these the controller transitions straight back out of Walk.
-                animator.SetBool(MovingParam, s.moving);
-                animator.SetFloat(SpeedParam, s.speed);
+                foreach (AnimatorControllerParameter parameter in animator.parameters)
+                {
+                    if (parameter.nameHash == MovingParam && parameter.type == AnimatorControllerParameterType.Bool) animator.SetBool(MovingParam, s.moving);
+                    if (parameter.nameHash == SpeedParam && parameter.type == AnimatorControllerParameterType.Float) animator.SetFloat(SpeedParam, s.speed);
+                }
             }
             animator.Play(s.anim, 0, Mathf.Min(s.animTime, 0.999f)); // see DefenderTracker.WriteAnimation
+            if (agentParams) { VisualOnlyPrefab.Freeze(animator); animator.Update(0); }
         }
 
         // ---- Helpers -------------------------------------------------------------------------
@@ -680,6 +792,7 @@ namespace BadNorthMP.Spectator
     internal static class SpectatorSelectPatch
     {
         // The mastermind can't command the defender's squads (selecting would also slow time).
-        private static bool Prefix(EnglishSquad newSelection) => !(SpectatorSession.Active && newSelection);
+        private static bool Prefix(EnglishSquad newSelection) => !SpectatorSession.Active || !newSelection ||
+            (Net.Roles.IsRemoteDefender && Net.PartyFlow.CanSelect(newSelection));
     }
 }

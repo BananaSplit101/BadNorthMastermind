@@ -10,6 +10,6 @@ namespace BadNorthMP.Patches
     internal static class SelectionSlowMotionPatch
     {
         private static bool Prefix(object requester) =>
-            !(requester is SquadSelector && Roles.IsDefender && Roles.HasMastermind);
+            !(requester is SquadSelector && (Roles.IsRemoteDefender || (Roles.IsDefender && Roles.HasMastermind)));
     }
 }

@@ -23,6 +23,12 @@ namespace BadNorthMP.Net
         {
             if (data.Length == 0)
                 return;
+            if (!Updater.Compatible || !Updater.IsCompatible(sender)) return;
+            Handle(sender, data);
+        }
+
+        private static void Handle(CSteamID sender, byte[] data)
+        {
             var type = (MsgType)data[0];
             if (IsBattleMessage(type))
             {

@@ -10,25 +10,19 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Defender side of a battle: a stream of messages that is recorded to disk (for solo replays with F11)
-    /// and sent to the mastermind. A mastermind who arrives mid-battle gets the battle info plus every
-    /// reliable message so far, so their puppet world catches up.
+    /// The campaign leader's side of a battle: a stream of messages sent to everyone watching it. A player who
+    /// arrives mid-battle gets the battle info plus every reliable message so far, so their copy catches up.
     /// </summary>
     internal static class BattleStream
     {
-        public const int FileMagic = 0x504D4E42; // "BNMP"
-        public const int FileVersion = 6;
-
         public static bool Active { get; private set; }
 
-        /// <summary>Seconds of real time since the battle started; snapshots are stamped with it.</summary>
-        /// <remarks>Game time, so a solo recording's selection slow-motion plays back at normal speed.</remarks>
+        /// <summary>Seconds of game time since the battle started; snapshots are stamped with it.</summary>
         public static float StreamTime => Time.time - startTime;
 
         private static byte[] battleInfo;
         private static readonly List<byte[]> reliableHistory = new List<byte[]>();
         private static readonly HashSet<CSteamID> sentTo = new HashSet<CSteamID>();
-        private static BinaryWriter recording;
         private static float startTime;
 
         public static void Begin(BattleInfo info)
@@ -39,19 +33,6 @@ namespace BadNorthMP.Net
             sentTo.Clear();
             startTime = Time.time;
             Active = true;
-            try
-            {
-                recording = new BinaryWriter(File.Create(SpectatorSession.LastBattlePath));
-                recording.Write(FileMagic);
-                recording.Write(FileVersion);
-                recording.Write(battleInfo.Length);
-                recording.Write(battleInfo);
-            }
-            catch (Exception e)
-            {
-                ModLog.Warn($"Not recording this battle: {e.Message}");
-                recording = null;
-            }
             DefenderTracker.Reset();
             ModLog.Info($"Battle stream started ({battleInfo.Length / 1024} KB of battle info)");
         }
@@ -60,12 +41,6 @@ namespace BadNorthMP.Net
         {
             if (!Active)
                 return;
-            if (recording != null)
-            {
-                recording.Write(StreamTime);
-                recording.Write(packet.Length);
-                recording.Write(packet);
-            }
             if (reliable)
                 reliableHistory.Add(packet);
             foreach (CSteamID recipient in sentTo)
@@ -99,11 +74,6 @@ namespace BadNorthMP.Net
             Active = false;
             sentTo.Clear();
             reliableHistory.Clear();
-            if (recording != null)
-            {
-                recording.Close();
-                recording = null;
-            }
             ModLog.Info("Battle stream ended");
         }
     }
@@ -120,12 +90,12 @@ namespace BadNorthMP.Net
                 if (payload == null || !Roles.WatchesBattle || sender != Roles.DefenderId)
                     return;
                 ModLog.Info($"Received battle from {SteamSession.NameOf(sender)} ({payload.Length / 1024} KB)");
-                SpectatorSession.Instance.Watch(BattleInfo.FromBytes(payload), null);
+                SpectatorSession.Instance.Watch(BattleInfo.FromBytes(payload));
             });
             Router.On(MsgType.BattleEnd, (sender, r) =>
             {
-                if (sender == Roles.DefenderId)
-                    SpectatorSession.Instance.Stop();
+                if (Roles.WatchesBattle && sender == Roles.DefenderId)
+                    SpectatorSession.Instance.BattleEnded();
             });
             Router.BattleMessage = (sender, packet) =>
             {
@@ -135,16 +105,21 @@ namespace BadNorthMP.Net
         }
     }
 
-    [HarmonyPatch(typeof(IslandGameplayManager), nameof(IslandGameplayManager.EnterIsland))]
+    // Both initial entry and ReplayIslandRoutine run this before spawning the new raid.
+    [HarmonyPatch(typeof(IslandGameplayManager), "PlayIslandRoutine")]
     internal static class DefenderEnterIslandPatch
     {
-        private static void Postfix(Island island)
+        private static void Prefix(IslandGameplayManager __instance)
         {
-            if (SpectatorSession.Active)
+            // Only the campaign leader of a lobby shares its battles.
+            if (SpectatorSession.Active || !Roles.IsDefender)
                 return;
             try
             {
+                Island island = __instance.island;
                 BattleStream.Begin(BattleInfo.Capture(island.levelNode.index));
+                // Everyone now loads the island; it starts once they all have (LoadGatePatch).
+                LoadGate.Begin(island.levelNode.index);
             }
             catch (Exception e)
             {

@@ -55,16 +55,44 @@ namespace BadNorthMP.Game
             placeholder = null;
         }
 
-        /// <summary>Build and launch a wave at the given beach. Units are split over ships by deck space.</summary>
-        public static bool TryLaunch(Island island, int beachIndex, List<KeyValuePair<VikingReference, int>> units, out string error, out int unitCount)
+        public static bool CanLaunch(out string error)
         {
+            var manager = Singleton<IslandGameplayManager>.instance;
+            if (!MastermindMode || !Economy.Active)
+            { error = "multiplayer army controls aren't ready"; return false; }
+            if (!manager || !manager.island || !Economy.FightOn)
+            { error = "waiting for the defender to deploy squads and start the battle"; return false; }
+            if (Time.timeScale <= 0f)
+            { error = "the defender paused the battle"; return false; }
+            error = null;
+            return true;
+        }
+
+        /// <summary>Build and launch a wave at the given beach. Units are split over ships by deck space.</summary>
+        public static bool TryLaunch(Island island, int beachIndex, List<KeyValuePair<VikingReference, int>> units, out string error, out int unitCount) =>
+            TryLaunch(island, beachIndex, units, out error, out unitCount, out Wave ignored);
+
+        /// <summary>As above; <paramref name="launched"/> is the new wave, whose one ship group is one Viking squad.</summary>
+        public static bool TryLaunch(Island island, int beachIndex, List<KeyValuePair<VikingReference, int>> units, out string error, out int unitCount, out Wave launched) =>
+            TryLaunch(island, beachIndex, units, EconomyConfig.MaxShipsPerWave, out error, out unitCount, out launched);
+
+        /// <summary>As above, with its own ship limit (commanders may use more ships than a wave).</summary>
+        public static bool TryLaunch(Island island, int beachIndex, List<KeyValuePair<VikingReference, int>> units, int maxShips, out string error, out int unitCount, out Wave launched)
+        {
+            launched = null;
             error = null;
             unitCount = units.Sum(u => u.Value);
+            if (!CanLaunch(out error)) return false;
             Raid raid = island.raid;
             List<BeachChoice> beaches = BeachChoices.Get(island);
             if (!raid || raid.waves == null)
             {
                 error = "the island has no raid";
+                return false;
+            }
+            if (!raid.isActiveAndEnabled || !raid.landingContainer || !raid.landingContainer.gameObject.activeInHierarchy)
+            {
+                error = "the battle's ship container is inactive";
                 return false;
             }
             if (beachIndex < 0 || beachIndex >= beaches.Count)
@@ -85,14 +113,17 @@ namespace BadNorthMP.Game
                 return false;
             }
             List<List<KeyValuePair<VikingReference, int>>> shipLoads = PackShips(units, shipTypes.Last().area);
-            if (shipLoads.Count > EconomyConfig.MaxShipsPerWave)
+            if (shipLoads.Count > maxShips)
             {
-                error = $"that needs {shipLoads.Count} ships; the most per wave is {EconomyConfig.MaxShipsPerWave}";
+                error = $"that needs {shipLoads.Count} ships; the most at once is {maxShips}";
                 return false;
             }
 
             var wave = raid.landingContainer.gameObject.AddEmptyChild("BNMP Wave").AddComponent<Wave>();
             wave.raid = raid;
+            // Raid generation normally supplies these; AddComponent leaves them null.
+            wave.approachAudioId = units[0].Key.approachAudioId ?? FabricEventReference.none;
+            wave.arriveAudioId = units[0].Key.arriveAudioId ?? FabricEventReference.none;
             wave.timeSpreadGroup = 0f;   // Wave.Awake randomises these
             wave.timeSpreadShip = 1f;
             wave.waveStartTime = 0f;
@@ -117,7 +148,7 @@ namespace BadNorthMP.Game
                 float area = landing.agentArea;
                 landing.shipPrefab = shipTypes.FirstOrDefault(s => s.area >= area) ?? shipTypes.Last();
 
-                if (!Place(landing, beach, speed, placed) && !PlaceAnywhere(landing, beaches, speed, placed))
+                if (!Place(landing, beach, speed, placed))
                 {
                     Object.Destroy(wave.gameObject);
                     error = "no room to land there right now";
@@ -126,14 +157,55 @@ namespace BadNorthMP.Game
             }
 
             wave.RefreshLandings();
-            foreach (Landing landing in group.landings)
-                landing.Spawn();
+            try
+            {
+                foreach (Landing landing in group.landings)
+                {
+                    Longship ship = landing.Spawn();
+                    CustomShipOrders.Assign(ship);
+                    var animator = ship.GetComponent<Animator>();
+                    if (animator)
+                    {
+                        animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                        animator.enabled = true;
+                    }
+                    ship.gameObject.AddComponent<CustomShipWatch>();
+                    // Natively every ship becomes a boat to flee on once it has landed and emptied.
+                    Evacuation.AddShip(raid, ship);
+                }
+
+            }
+            catch (System.Exception e)
+            {
+                Object.Destroy(wave.gameObject);
+                ModLog.Error("Custom wave setup failed: " + e);
+                error = "wave setup failed; see the campaign leader's log";
+                return false;
+            }
 
             // Before the placeholder, so the placeholder stays last.
             int insertAt = placeholder && raid.waves.Contains(placeholder) ? raid.waves.IndexOf(placeholder) : raid.waves.Count;
             raid.waves.Insert(insertAt, wave);
+            // Execute the initial launch step here so exceptions cannot become
+            // a false success reply from an unobserved Unity coroutine.
+            var launch = wave.BeginWave();
+            try
+            {
+                bool more = launch.MoveNext();
+                if (!group.landings.Any(l => l.spawnedShip && l.spawnedShip.isActiveAndEnabled))
+                    throw new System.InvalidOperationException("No ship activated during wave launch");
+                if (more) raid.StartCoroutine(launch);
+            }
+            catch (System.Exception e)
+            {
+                raid.waves.Remove(wave);
+                Object.Destroy(wave.gameObject);
+                ModLog.Error("Custom wave launch failed: " + e);
+                error = "wave could not launch; see the campaign leader's log";
+                return false;
+            }
             sent.Add(wave);
-            raid.StartCoroutine(wave.BeginWave());
+            launched = wave;
             ModLog.Info($"Launched custom wave: {unitCount} Vikings in {shipLoads.Count} ships at the {beach.label} beach");
             return true;
         }
@@ -142,22 +214,12 @@ namespace BadNorthMP.Game
         {
             foreach (Beaches.Beach.Pos p in beach.positions)
             {
-                if (landing.TryPlace(p.navPos, p.dir + p.navPos.pos.normalized * 0.3f, speed, placed))
+                if (landing.TryPlace(p.navPos, p.dir, speed, placed))
                     return true;
             }
             foreach (Beaches.Beach.Pos p in beach.positions)
             {
                 if (landing.TryPlace(p.navPos, -p.navPos.GetCliffVector(), speed, placed))
-                    return true;
-            }
-            return false;
-        }
-
-        private static bool PlaceAnywhere(Landing landing, List<BeachChoice> beaches, float speed, List<Landing> placed)
-        {
-            foreach (BeachChoice beach in beaches)
-            {
-                if (Place(landing, beach, speed, placed))
                     return true;
             }
             return false;

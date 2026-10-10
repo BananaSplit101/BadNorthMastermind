@@ -1,0 +1,5 @@
+release/** -text
+*.dll binary
+*.zip binary
+*.png binary
+*.ogg binary

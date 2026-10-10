@@ -40,8 +40,20 @@
     <Reference Include="UnityEngine.UIModule" HintPath="$(ManagedDir)\UnityEngine.UIModule.dll" Private="false" />
     <Reference Include="UnityEngine.UI" HintPath="$(ManagedDir)\UnityEngine.UI.dll" Private="false" />
     <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(ManagedDir)\UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="UnityEngine.ImageConversionModule" HintPath="$(ManagedDir)\UnityEngine.ImageConversionModule.dll" Private="false" />
+    <Reference Include="UnityEngine.AudioModule" HintPath="$(ManagedDir)\UnityEngine.AudioModule.dll" Private="false" />
+    <Reference Include="UnityEngine.UnityWebRequestModule" HintPath="$(ManagedDir)\UnityEngine.UnityWebRequestModule.dll" Private="false" />
+    <Reference Include="UnityEngine.UnityWebRequestWWWModule" HintPath="$(ManagedDir)\UnityEngine.UnityWebRequestWWWModule.dll" Private="false" />
+    <Reference Include="UnityEngine.UnityWebRequestAudioModule" HintPath="$(ManagedDir)\UnityEngine.UnityWebRequestAudioModule.dll" Private="false" />
     <Reference Include="BepInEx" HintPath="$(BepInExDir)\core\BepInEx.dll" Private="false" />
     <Reference Include="0Harmony" HintPath="$(BepInExDir)\core\0Harmony.dll" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="UpdateInstall.ps1" LogicalName="BadNorthMP.UpdateInstall.ps1" />
+    <!-- Viking commander flags (GMW's Viking Commander) and the sail-in war cries (GMW's Commanders Sail In). -->
+    <EmbeddedResource Include="..\assets\VikingCommanders\*.png" LogicalName="BadNorthMP.Assets.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\assets\SailIn\*.ogg" LogicalName="BadNorthMP.Assets.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <Target Name="DeployPlugin" AfterTargets="Build">

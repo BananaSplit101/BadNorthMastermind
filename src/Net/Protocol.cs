@@ -6,14 +6,10 @@ namespace BadNorthMP.Net
     {
         Ping = 1,       // float sentAt
         Pong = 2,       // float sentAt (echoed)
-        Chat = 3,       // string text
-        Status = 4,     // host -> all: IslandStatus
-        WaveRequest = 5,// mastermind -> host: (empty)
-        Notice = 6,     // defender -> mastermind: string text (wave launched, request refused, ...)
         BattleChunk = 7,// defender -> mastermind: one piece of a BattleInfo (int transferId, int index, int count, bytes)
         BattleEnd = 8,  // defender -> mastermind: (empty) the defender left the island
 
-        // Battle stream (defender -> mastermind, also recorded to disk). Handled by Spectator.PuppetWorld.
+        // Battle stream (campaign leader -> watchers). Handled by Spectator.PuppetWorld.
         SquadSpawn = 9,   // int squadId, byte side (0 English, 1 Viking), int heroIndex, Vector3 pos
         AgentSpawn = 10,  // int agentId, int squadId, string prefabName, bool isStandard, Vector3 pos
         AgentSpawned = 11,// int agentId: became visible/active (Agent.Spawn)
@@ -30,12 +26,55 @@ namespace BadNorthMP.Net
         Sound = 22,       // byte target (SoundTarget), int targetId, Vector3 pos, bool byName, string name | int id, int action (-1 = default)
         Effect = 23,      // string effectName, Vector3 pos, short4 rot, Vector3 scale, bool onNavMesh
         Dust = 24,        // Vector3 pos, Vector3 dir: footstep/landing dust (DustParticles)
+        UnitVisualNode = 25,
+        UnitAnimatorFrame = 26,
+        UnitNodeFrame = 27,
+        UnitAgentFrame = 28,
+        UnitVisualNodeGone = 29,
+        CoinFrame = 30,   // pooled native coin pose and animator layers
+        CoinGone = 31,    // int coinId
+        HouseVisual = 32, // native house animations and healing progress display
+        // Battle-stream messages must stay within SquadSpawn..LastBattleMessage (Router.IsBattleMessage).
+        SquadTiles = 33,  // defender -> watchers: byte count, then per squad: int heroIndex, short navSpotIndex (its destination tile)
+        SquadEvac = 34,   // defender -> watchers: byte count, then per squad: int heroIndex, bool canFlee
+        SailIn = 36,          // leader -> watchers: byte phase (0 follow, 1 zoom out), int shipId, Vector3 shore: a commander's boat cinematic
+        CommanderSquads = 35, // leader -> watchers: byte count, then (int commanderId, int squadId, byte trait, int flagAgentId): the mastermind's Viking commanders
         LastBattleMessage = 39,
 
-        // Mastermind game (not part of the recorded battle stream).
-        BuildWave = 40,   // mastermind -> defender: int beach, byte count, then (int vikingType, int amount) pairs
+        // Lobby, campaign and mastermind messages (handled by Router.On).
+        WavePlan = 40,    // mastermind -> leader: byte landings, then per landing int tile, byte count, (int vikingType, int paid) pairs
         GiveUp = 41,      // mastermind -> defender: (empty)
         MasterState = 42, // defender -> mastermind: MasterState
+        HostLoading = 45, // bool loading, bool ready: mastermind -> all
+        CampaignChunk = 46,
+        CampaignClosed = 47,
+        BuyUpgrade = 48,
+        PartyState = 49,
+        PartyPick = 50,
+        PartyBegin = 51,
+        PartyOwnership = 52,
+        PartyFailure = 53,
+        PartyCatalog = 54,
+        PartyDeleteSave = 71, // host -> campaign leader: int slot (0..4): delete that multiplayer campaign
+        DefenderAction = 55,
+        DefenderOrderResult = 56, // defender -> order sender: bool accepted, string message
+        PartyClosed = 57,
+        UpgradeRequest = 59, // defender -> leader: int token, int seed, int heroIndex, string upgrade, int level
+        UpgradeResult = 60,  // leader -> requester: bool applied, string message
+        UpgradeApplied = 61, // leader -> all: int token, int seed, ulong purchaser, int heroIndex, string upgrade, int level, int coinBank
+        VoteCast = 62,       // defender -> leader: int token, int seed, int option (level index, or IslandVote.NextTurn)
+        CommanderBuy = 64,    // mastermind -> leader: long session, int nextCommanderId, byte vikingType
+        CommanderDeploy = 65, // mastermind -> leader: int commanderId, int tile
+        PartyStateRequest = 67, // guest -> host: (empty) the party state again; sent after reconnecting
+        BattleReady = 69,       // watcher -> leader: int levelIndex: my copy of the island is loaded
+        LoadWait = 70,          // leader -> all: int levelIndex, byte count, ulong[] players still loading (0 = starting)
+        MapWait = 72,           // leader -> all: int visit, int campaignRevision, byte count, ulong[] players still loading the map
+        MapReady = 73,          // watcher -> leader: int visit, int campaignRevision: my campaign map has loaded
+        NextTurnPlayed = 74,    // leader -> all: int token, int seed, int turnCount (after), float day: play this Next Turn on your own map
+        CommanderSell = 75,     // mastermind -> leader: long session, int commanderId: sell it back for a share of its price
+        CampaignRequest = 68,   // watcher -> leader: (empty) the current campaign again; sent while it hasn't arrived
+        CommanderOrder = 66,  // mastermind -> leader: int commanderId, byte kind (0 move, 1 burn, 2 release), int target (tile or house)
+        VoteState = 63,      // leader -> all: int token, int seed, float secondsLeft, float launchSecondsLeft, bool nextTurnAllowed, byte count, (ulong player, int option)*, int decided
         DefenderMove = 44, // int hero index, int navspot index
         Result = 43,      // defender -> mastermind: bool ok, string message
     }
@@ -77,43 +116,6 @@ namespace BadNorthMP.Net
 
         public static UnityEngine.Vector3 ReadVector3(this BinaryReader r) =>
             new UnityEngine.Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
-    }
-
-    /// <summary>Snapshot of the host's battle, shown to the mastermind.</summary>
-    internal struct IslandStatus
-    {
-        public bool onIsland;
-        public int nextWave;     // 1-based index of the next wave to launch
-        public int waveCount;
-        public bool waveLaunching;
-        public int squadsAlive;
-        public int vikingsAlive;
-        public bool mastermindControlsWaves;
-        public float timeToNextWave; // seconds, only meaningful when the timer is running
-
-        public void Write(BinaryWriter w)
-        {
-            w.Write(onIsland);
-            w.Write(nextWave);
-            w.Write(waveCount);
-            w.Write(waveLaunching);
-            w.Write(squadsAlive);
-            w.Write(vikingsAlive);
-            w.Write(mastermindControlsWaves);
-            w.Write(timeToNextWave);
-        }
-
-        public static IslandStatus Read(BinaryReader r) => new IslandStatus
-        {
-            onIsland = r.ReadBoolean(),
-            nextWave = r.ReadInt32(),
-            waveCount = r.ReadInt32(),
-            waveLaunching = r.ReadBoolean(),
-            squadsAlive = r.ReadInt32(),
-            vikingsAlive = r.ReadInt32(),
-            mastermindControlsWaves = r.ReadBoolean(),
-            timeToNextWave = r.ReadSingle(),
-        };
     }
 
     internal static class Packet

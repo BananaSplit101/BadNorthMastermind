@@ -1,6 +1,5 @@
 using BepInEx;
 using HarmonyLib;
-using BadNorthMP.DevTools;
 using BadNorthMP.Net;
 using BadNorthMP.Spectator;
 using BadNorthMP.UI;
@@ -12,29 +11,30 @@ namespace BadNorthMP
     {
         public const string Id = "com.bananasplit.badnorthmp";
         public const string Name = "Bad North Multiplayer";
-        public const string Version = "0.6.3";
+        public const string Version = "1.0.0";
 
         private void Awake()
         {
             ModLog.Init(Logger);
+            ModConfig.Bind(Config);
 
-            var harmony = new Harmony(Id);
-            harmony.PatchAll(typeof(Plugin).Assembly);
-            foreach (var method in harmony.GetPatchedMethods())
-                ModLog.Info($"Patched {method.DeclaringType?.Name}.{method.Name}");
+            new Harmony(Id).PatchAll(typeof(Plugin).Assembly);
 
             gameObject.AddComponent<SteamSession>();
+            gameObject.AddComponent<Updater>();
             gameObject.AddComponent<MultiplayerGame>();
             gameObject.AddComponent<MultiplayerScreen>();
             gameObject.AddComponent<SpectatorSession>();
             gameObject.AddComponent<PuppetWorld>();
+            gameObject.AddComponent<LoadGate>();
+            gameObject.AddComponent<CoinVisuals>();
             gameObject.AddComponent<MastermindPanel>();
+            gameObject.AddComponent<VotePanel>();
             gameObject.AddComponent<CampaignScreen>();
             gameObject.AddComponent<RemoteDefender>();
-            gameObject.AddComponent<DebugKeys>();
-            gameObject.AddComponent<DebugOverlay>();
+            gameObject.AddComponent<CommanderDraftScreen>();
 
-            ModLog.Info($"{Name} {Version} loaded. F7 overlay, F8 move squad, F9 next wave, F10 dump island, F11 watch your last battle, F12 test custom wave.");
+            ModLog.Info($"{Name} {Version} loaded");
         }
     }
 }

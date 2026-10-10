@@ -1,41 +1,85 @@
-# BadNorthMP
+# Bad North Mastermind
 
-A work-in-progress asymmetric multiplayer mod for [Bad North: Jotunn Edition](https://store.steampowered.com/app/688420/).
-Defenders each command their own squads, while a "mastermind" player summons the Viking waves.
+An asymmetric co-op multiplayer mod for [Bad North: Jotunn Edition](https://store.steampowered.com/app/688420/) (Steam, Windows).
 
-**Status:** First playable slice. The host creates a Steam lobby and invites a friend. The host defends, and the friend is the mastermind who decides when the host's Viking waves launch (`Multiplayer` in the main menu and pause menu). The island itself isn't synced yet, so the mastermind sees a status readout rather than the battle.
+Up to four defenders play one shared campaign together, each commanding their own squads. A fifth player, the **mastermind**, plays the Vikings:
+- they plan every wave: what lands and on which beaches;
+- they spend a war chest on Viking upgrades;
+- they recruit Viking commanders that they deploy and order around in battle.
 
-## Making a test build for a friend
+Everything runs over Steam lobbies and invites. Each player sees the battle live in their own game.
+
+## Install
+1. Download [`release/BadNorthMP.zip`](https://github.com/BananaSplit101/BadNorthMastermind/raw/main/release/BadNorthMP.zip).
+2. Close Bad North and open its folder: Steam > Bad North > Manage > Browse local files.
+3. Extract the zip there, so `winhttp.dll` and `BepInEx/` sit next to `BadNorth.exe`.
+4. Start the game through Steam. **Multiplayer** is in the main menu. Enable the Steam overlay for invites.
+
+The zip contains [BepInEx 5](https://github.com/BepInEx/BepInEx) (x86) and the mod.
+
+## Updates
+The mod checks this repository for a new version and updates itself:
+- **Where it looks:** it reads `release/latest.txt` from the `main` branch, which lists the version, size and SHA-256 of `release/BadNorthMP.dll`.
+- **When it checks:** at start-up, every 15 minutes, and on joining a lobby.
+- **What you see:** a notice appears, and the Multiplayer screen offers *Update to X*.
+- **Safety:** the download is verified against the published size and hash before it's kept.
+- **Install and restart:** swaps the DLL, keeps the old one as `BadNorthMP.dll.previous`, and restarts the game through Steam back into the lobby.
+
+Everyone in a lobby must run the same version.
+
+## Building
+Requirements:
+- Bad North installed with BepInEx 5 x86 (install the zip above once);
+- the .NET SDK (any recent version builds the `net35` target through reference packages);
+- PowerShell 7 (`pwsh`) for the tools.
+
 ```
-pwsh tools/package.ps1
+dotnet build src/BadNorthMP.csproj
 ```
-This produces `dist/BadNorthMP-<version>.zip`, containing the BepInEx loader, the plugin and `INSTALL.txt`. Close the game first, so your own install gets the same DLL (the version check refuses mismatched builds). Bump `Plugin.Version` whenever you send a new build.
+The build copies the DLL to the game's `BepInEx/plugins/BadNorthMP/`. Close the game first, because it locks the DLL. If the game isn't in the default Steam folder, pass `-p:GameDir="D:\path\to\BadNorth"`.
 
-## Setup
-1. Install **BepInEx 5 x86** (the game is 32-bit): extract `BepInEx_win_x86_5.4.23.x.zip` from
-   https://github.com/BepInEx/BepInEx/releases into the game folder
-   (`C:\Program Files (x86)\Steam\steamapps\common\BadNorth`). Run the game once.
-2. Optional: set `[Logging.Console] Enabled = true` in `BepInEx\config\BepInEx.cfg` for a live log window.
-3. Build. The build also copies the DLL to `BepInEx\plugins\BadNorthMP\`:
-   ```
-   dotnet build src/BadNorthMP.csproj
-   ```
-   If the game is installed elsewhere, pass `-p:GameDir="D:\path\to\BadNorth"`. Close the game before rebuilding, because the running game locks the DLL.
+### Tests and checks
+```
+pwsh tools/test-mastermindupgrades.ps1   # and every other tools/test-*.ps1
+python tools/check-game-patch-targets.py # every Harmony/reflection target exists in the installed game
+python tools/check-battle-messages.py    # battle-stream message ids stay in their range
+python tools/check-spectator-gate.py
+```
+The tests compile the real sources against small stubs of the game, Unity and Steam, then run them on the .NET SDK.
 
-## Debug hotkeys (on an island)
-| Key | Action |
+### Releasing
+1. Bump `Version` in [`src/Plugin.cs`](src/Plugin.cs).
+2. Run `pwsh tools/package.ps1`. It builds Release and refreshes `release/`:
+   - `BadNorthMP.dll`;
+   - `BadNorthMP.zip`, the full install with BepInEx;
+   - `latest.txt`, the version, size and SHA-256.
+3. Commit and push `release/` to `main`. Running games pick the update up on their next check.
+
+## Layout
+| Path | What |
 | --- | --- |
-| F7  | Toggle the overlay |
-| F8  | Move the selected squad (or the first one) to a random free spot |
-| F9  | Launch the next Viking wave now |
-| F10 | Dump squads, vikings and waves to the log |
-
-The log is at `BepInEx\LogOutput.log`.
+| `src/Net/` | Steam lobby and P2P transport, message routing, the party/draft flow, voting, loading gates, campaign and battle streaming, the updater |
+| `src/Game/` | The mastermind's economy, wave schedule, custom waves, upgrades and Viking commanders |
+| `src/Spectator/` | Watching another player's campaign and battle: the puppet world, the native lifecycle and the spectator guards |
+| `src/UI/` | The mastermind HUD and war chest, commander draft, vote panel and Multiplayer screen, built from the game's own widgets |
+| `src/Patches/` | Harmony patches on the game |
+| `assets/` | Commander flags and sail-in war cries (from GMW's mods, with permission) embedded in the DLL |
+| `docs/` | Notes on the game's internals and the unit-visual stream format |
+| `tools/` | The package script, test suites and checks |
 
 ## Reading the game code
 ```
-dotnet tool install -g ilspycmd --version 9.1.0.7988
-set DOTNET_ROLL_FORWARD=Major
+dotnet tool install -g ilspycmd
 ilspycmd -p -o decompiled "C:\Program Files (x86)\Steam\steamapps\common\BadNorth\BadNorth_Data\Managed\Assembly-CSharp.dll"
 ```
-`decompiled/` is gitignored. Don't commit the game's code. See [docs/game-map.md](docs/game-map.md) for where things are.
+`decompiled/` is gitignored. **Never commit the game's code.** See [docs/game-map.md](docs/game-map.md) for where things are.
+
+## Credits
+- **GMW's mods**, ported with permission:
+  - Viking commander traits and flags;
+  - Commanders Sail In, including its war cries and flag artwork;
+  - Hidden Lineup;
+  - Unit Integrity Display.
+- **ABaLaQiYaShanMaiI's BadNorthNewMode (MIT)**, for the Viking control rules: settling in place, unsticking, torches only at the house, box select, and orders from the ship.
+- The install zip bundles [BepInEx](https://github.com/BepInEx/BepInEx) (LGPL-2.1) with HarmonyX, MonoMod and Mono.Cecil (MIT).
+- **Bad North** is made by Plausible Concept and published by Raw Fury. This project is not affiliated with them.
