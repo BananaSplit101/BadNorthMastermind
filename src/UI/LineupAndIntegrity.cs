@@ -66,6 +66,26 @@ namespace BadNorthMP.UI
         }
     }
 
+    /// <summary>
+    /// The mastermind sends the Vikings, so it knows every type: the map's island icons show the real faces, not the
+    /// "?" the game keeps until the defenders' campaign has met that type. Not counted as a discovery (no flourish).
+    /// </summary>
+    [HarmonyPatch(typeof(LevelNodeEnemy), nameof(LevelNodeEnemy.UpdateVisual))]
+    internal static class MastermindKnowsEveryVikingPatch
+    {
+        private static bool Prefix(LevelNodeEnemy __instance, ref bool __result, VikingReference ___vikingReference, ref bool ___seen)
+        {
+            if (!Roles.IsMastermind || ___seen || ___vikingReference == null || ___vikingReference.seen) return true;
+            var headshot = __instance.GetComponent<HeadshotImage>();
+            if (!headshot) return true;
+            headshot.sprite = ___vikingReference.sprite2;
+            headshot.rectTransform.sizeDelta = headshot.rectTransform.sizeDelta * __instance.scale;
+            ___seen = true;
+            __result = false;
+            return false;
+        }
+    }
+
     /// <summary>A selected squad's banner shows how many soldiers are left: "Name (5/9 left)".</summary>
     [HarmonyPatch(typeof(SquadSelectedBanner), nameof(SquadSelectedBanner.Setup))]
     internal static class UnitIntegrityPatch

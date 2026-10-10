@@ -28,11 +28,14 @@ namespace BadNorthMP.Net
 
         public event Action LobbyChanged = delegate { };
         public event Action<CSteamID, byte[]> MessageReceived = delegate { };
+        /// <summary>A friend invited us to their lobby (inviter, lobby); UI.InvitePopup offers to join it.</summary>
+        public event Action<CSteamID, CSteamID> InviteReceived = delegate { };
 
         private Callback<LobbyEnter_t> lobbyEnter;
         private Callback<LobbyChatUpdate_t> lobbyChatUpdate;
         private Callback<LobbyDataUpdate_t> lobbyDataUpdate;
         private Callback<GameLobbyJoinRequested_t> lobbyJoinRequested;
+        private Callback<LobbyInvite_t> lobbyInvite;
         private Callback<GameRichPresenceJoinRequested_t> richPresenceJoinRequested;
         private Callback<P2PSessionRequest_t> p2pSessionRequest;
         private Callback<P2PSessionConnectFail_t> p2pSessionFailed;
@@ -85,6 +88,7 @@ namespace BadNorthMP.Net
             lobbyChatUpdate = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdate);
             lobbyDataUpdate = Callback<LobbyDataUpdate_t>.Create(OnLobbyDataUpdate);
             lobbyJoinRequested = Callback<GameLobbyJoinRequested_t>.Create(OnLobbyJoinRequested);
+            lobbyInvite = Callback<LobbyInvite_t>.Create(OnLobbyInvite);
             richPresenceJoinRequested = Callback<GameRichPresenceJoinRequested_t>.Create(OnRichPresenceJoinRequested);
             p2pSessionRequest = Callback<P2PSessionRequest_t>.Create(OnP2PSessionRequest);
             p2pSessionFailed = Callback<P2PSessionConnectFail_t>.Create(OnP2PSessionFailed);
@@ -292,6 +296,18 @@ namespace BadNorthMP.Net
         {
             ModLog.Info($"Join request from {NameOf(request.m_steamIDFriend)}");
             Join(request.m_steamIDLobby);
+        }
+
+        // A friend invited us while the game is running. Steam only shows it in its own overlay; offer it in game.
+        private void OnLobbyInvite(LobbyInvite_t invite)
+        {
+            // The game id's low 24 bits are the app id: only invites to Bad North.
+            if ((uint)(invite.m_ulGameID & 0xFFFFFF) != SteamUtils.GetAppID().m_AppId) return;
+            var lobby = new CSteamID(invite.m_ulSteamIDLobby);
+            if (lobby == Lobby || lobby == pendingLobby) return;
+            var from = new CSteamID(invite.m_ulSteamIDUser);
+            ModLog.Info($"Invite from {NameOf(from)}");
+            InviteReceived(from, lobby);
         }
 
         private void OnRichPresenceJoinRequested(GameRichPresenceJoinRequested_t request)

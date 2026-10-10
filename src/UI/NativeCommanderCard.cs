@@ -108,6 +108,16 @@ namespace BadNorthMP.UI
                             customizer.transform.InverseTransformPoint(transform.position).x < 0 ? -1 : 1));
             var upgradeArrows = new List<KeyValuePair<GameObject, Action>>();
             var card = new NativeCommanderCard();
+            // A carousel's entries aren't all inside it: the item carousel shows icons, and its name is drawn by an
+            // UpgradeCarouselSlave elsewhere on the card that mirrors it (the "driver").
+            var slaves = new List<KeyValuePair<UpgradeCarousel, Transform>>();
+            var slaveType = AccessTools.TypeByName("Voxels.TowerDefense.UI.UpgradeCarouselSlave");
+            if (slaveType != null)
+                foreach (var slave in clone.GetComponentsInChildren(slaveType, true))
+                {
+                    var driver = Traverse.Create(slave).Field<UpgradeCarousel>("driver").Value;
+                    if (driver) slaves.Add(new KeyValuePair<UpgradeCarousel, Transform>(driver, slave.transform));
+                }
             // Snapshot the carousel references before removing their controllers.
             foreach (var carousel in clone.GetComponentsInChildren<UpgradeCarousel>(true))
             {
@@ -125,14 +135,19 @@ namespace BadNorthMP.UI
                 var shown = new Carousel { item = item };
                 card.carousels.Add(shown);
                 bool shownName = false, shownIcon = false;
-                foreach (var script in carousel.GetComponentsInChildren<MonoBehaviour>(true))
+                var roots = new List<Transform> { carousel.transform };
+                foreach (var slave in slaves) if (slave.Key == carousel) roots.Add(slave.Value);
+                foreach (Transform root in roots)
+                foreach (var script in root.GetComponentsInChildren<MonoBehaviour>(true))
                 {
                     if (script.GetType().Name == "UpgradeCarouselItemName")
                     {
                         script.gameObject.SetActive(!shownName);
                         if (shownName) continue;
                         shownName = true;
-                        var text = script.GetComponentInChildren<Text>(true);
+                        // The label the game writes the name into: the Text with the Localize on it.
+                        var localize = script.GetComponentInChildren<Localize>(true);
+                        var text = localize ? localize.GetComponent<Text>() : script.GetComponentInChildren<Text>(true);
                         if (text)
                         {
                             text.gameObject.SetActive(true);
@@ -142,7 +157,7 @@ namespace BadNorthMP.UI
                         var entry = (RectTransform)script.transform;
                         entry.pivot = new Vector2(0.5f, 0.5f);
                         entry.anchoredPosition = Vector2.zero;
-                        ActivateParents(script.transform, carousel.transform);
+                        ActivateParents(script.transform, root);
                     }
                     else if (script.GetType().Name == "UpgradeCarouselItemIcon")
                     {
@@ -157,9 +172,10 @@ namespace BadNorthMP.UI
                         icon.gameObject.SetActive(true); icon.transform.localScale = Vector3.one;
                         var entry = (RectTransform)script.transform;
                         entry.anchoredPosition = Vector2.zero;
-                        ActivateParents(script.transform, carousel.transform);
+                        ActivateParents(script.transform, root);
                     }
                 }
+                if (!shownName) ModLog.Warn($"Commander card: no {(item ? "item" : "trait")} name label found; its name won't update");
                 Show(shown, definition);
             }
             var deluxe = Traverse.Create(clone.GetComponent(type)).Field<BoolWidget>("deluxeDLCWidget").Value;

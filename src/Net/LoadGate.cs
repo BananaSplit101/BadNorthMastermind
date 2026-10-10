@@ -317,8 +317,7 @@ namespace BadNorthMP.Net
             var others = new List<CSteamID>(island ? loading : mapLoading);
             bool me = others.Remove(Session.Me);
             string what = island ? "the island" : "the map";
-            text.text = (me ? $"Loading {what}... everyone else is waiting for you" : $"Waiting for {Names(others)} to load {what}...") +
-                "\n<size=22>Everything unlocks once everyone has loaded</size>";
+            text.text = me ? $"Loading {what}... everyone else is waiting for you" : $"Waiting for {Names(others)} to load {what}...";
         }
 
         private void Build()
@@ -353,7 +352,7 @@ namespace BadNorthMP.Net
             var rect = text.rectTransform;
             rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.anchoredPosition = Vector2.zero;
-            rect.sizeDelta = new Vector2(10f, 80f);
+            rect.sizeDelta = new Vector2(10f, 40f);
         }
     }
 
