@@ -14,6 +14,13 @@ namespace BadNorthMP.Game
         /// <summary>Share of a wave's unspent budget added to the next wave. The last wave's leftover is lost.</summary>
         public const float CarryToNextWave = 0.5f;
 
+        /// <summary>Each defender beyond the first adds this share to the Vikings (the leader's config can change it).</summary>
+        public const float DefaultPerExtraDefender = 0.25f;
+
+        /// <summary>How much stronger the Vikings get for a party of this many defenders: wave budgets and the island payout.</summary>
+        public static float PartyScale(int defenders, float perExtraDefender) =>
+            1f + System.Math.Max(0f, perExtraDefender) * System.Math.Max(0, defenders - 1);
+
         // ---- War chest: persistent gold for upgrades (and later commanders) ----
 
         /// <summary>Paid into the war chest during battle.</summary>

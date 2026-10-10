@@ -11,15 +11,24 @@ namespace BadNorthMP
     {
         public const string Id = "com.bananasplit.badnorthmp";
         public const string Name = "Bad North Multiplayer";
-        public const string Version = "1.0.6";
+        public const string Version = "1.0.7";
 
         private void Awake()
         {
             ModLog.Init(Logger);
             ModConfig.Bind(Config);
 
+            // GMW's traits first: saves and shared campaigns name their traits, so the game must know them before loading any.
+            try
+            {
+                Traits.VanillaTraitsOverhaul.Register();
+                Traits.TraitsGalore.Register();
+                PartyLoadout.ExtraTraits = () => Traits.CustomTraits.All;
+            }
+            catch (System.Exception e) { ModLog.Error("Commander traits failed to load: " + e); }
             new Harmony(Id).PatchAll(typeof(Plugin).Assembly);
             PartyFlow.MaxDeployed = () => ModConfig.MaxDeployed.Value;
+            Game.Economy.PartyScale = () => Game.EconomyConfig.PartyScale(PartyFlow.ConnectedDefenders, ModConfig.PerExtraDefender.Value);
 
             gameObject.AddComponent<SteamSession>();
             gameObject.AddComponent<Updater>();
@@ -36,6 +45,9 @@ namespace BadNorthMP
             gameObject.AddComponent<CommanderDraftScreen>();
             gameObject.AddComponent<InvitePopup>();
             gameObject.AddComponent<DeployPanel>();
+            gameObject.AddComponent<NativeLoadout>();
+            DeployFlow.Landing = NativeLoadout.Close;
+            gameObject.AddComponent<RelicTooltip>();
 
             ModLog.Info($"{Name} {Version} loaded");
         }

@@ -218,7 +218,8 @@ namespace BadNorthMP.Net
             if (remote)
             {
                 var states = Singleton<IslandGameplayManager>.instance.states;
-                if (!states.running.active) states.running.SetActive(true);
+                // Not while the game's loadout screen is up for the party's choice of commanders.
+                if (!states.running.active && !UI.NativeLoadout.Showing) states.running.SetActive(true);
                 NativeDefenderControls.UpdateTiles();
                 NativeDefenderControls.Report();
             }

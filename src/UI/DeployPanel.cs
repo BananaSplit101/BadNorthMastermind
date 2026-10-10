@@ -28,7 +28,8 @@ namespace BadNorthMP.UI
 
         private void Update()
         {
-            if (!DeployFlow.Choosing)
+            // While the game's own loadout screen is up for this player's choice, it is the picker.
+            if (!DeployFlow.Choosing || NativeLoadout.Showing)
             {
                 if (canvasObject && canvasObject.activeSelf) canvasObject.SetActive(false);
                 return;
@@ -45,31 +46,36 @@ namespace BadNorthMP.UI
             List<HeroDefinition> heroes = Profile.campaign != null ? Profile.campaign.heroes : null;
             bool choosing = mine != null && mine.Choosing && heroes != null;
             bool rescuer = mine != null && plan.rescueHero >= 0 && plan.rescueOwner == mine.player;
+            // The game's loadout screen does the picking; this panel only shows its own cards if that screen isn't there.
+            bool native = !NativeLoadout.Unavailable;
+            bool cardsShown = choosing && !native;
 
-            string text = choosing ? (mine.quota == 1 ? "Choose the commander you'll bring" : $"Choose {mine.quota} commanders to bring")
+            string text = choosing && native ? (mine.ready ? "You're ready: waiting for the others" : "Choose your commanders")
+                : choosing ? (mine.quota == 1 ? "Choose the commander you'll bring" : $"Choose {mine.quota} commanders to bring")
                 : rescuer ? $"You command the rescued {Name(plan.rescueHero)} on this island"
                 : mine != null ? "Your commanders sit this island out"
                 : "The defenders are choosing their commanders";
             if (choosing && rescuer) text += $"\n<size=18>You also command the rescued {Name(plan.rescueHero)}</size>";
             title.text = text;
 
-            string cardsKey = choosing ? plan.token + ":" + string.Join(",", mine.candidates.ConvertAll(id => id.ToString()).ToArray()) : "";
+            string cardsKey = cardsShown ? plan.token + ":" + string.Join(",", mine.candidates.ConvertAll(id => id.ToString()).ToArray()) : "";
             if (cardsKey != signature)
             {
                 signature = cardsKey;
                 for (int i = cards.childCount - 1; i >= 0; i--) Destroy(cards.GetChild(i).gameObject);
                 cardImages.Clear();
-                if (choosing) foreach (int id in mine.candidates) if (id < heroes.Count) Card(id, heroes[id]);
-                cards.gameObject.SetActive(choosing);
+                if (cardsShown) foreach (int id in mine.candidates) if (id < heroes.Count) Card(id, heroes[id]);
+                cards.gameObject.SetActive(cardsShown);
             }
-            if (choosing)
+            if (cardsShown)
                 foreach (var card in cardImages) card.Value.color = mine.picks.Contains(card.Key) ? PickedColor : GameStyle.ButtonColor;
 
             ready.gameObject.SetActive(choosing);
             if (choosing)
             {
-                ready.interactable = mine.picks.Count >= 1 && mine.picks.Count <= mine.quota;
-                readyLabel.text = mine.ready ? "Not ready" : "Ready";
+                ready.interactable = native || (mine.picks.Count >= 1 && mine.picks.Count <= mine.quota);
+                // Un-readying reopens the game's loadout screen with the current picks.
+                readyLabel.text = native ? "Change commanders" : mine.ready ? "Not ready" : "Ready";
             }
 
             var line = new StringBuilder();

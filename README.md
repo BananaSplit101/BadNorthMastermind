@@ -65,7 +65,8 @@ Running games pick the update up on their next check. Without `-Publish`, the fi
 | `src/Spectator/` | Watching another player's campaign and battle: the puppet world, the native lifecycle and the spectator guards |
 | `src/UI/` | The mastermind HUD and war chest, commander draft, vote panel and Multiplayer screen, built from the game's own widgets |
 | `src/Patches/` | Harmony patches on the game |
-| `assets/` | Commander flags and sail-in war cries (from GMW's mods, with permission) embedded in the DLL |
+| `src/Traits/` | Commander traits: GMW's Traits Galore and Vanilla Traits Overhaul |
+| `assets/` | Commander flags, sail-in war cries and trait icons (from GMW's mods, with permission) embedded in the DLL |
 | `release/` | The update channel of 1.0.0, which read the newest version from here instead of from releases. It points at 1.0.1 and doesn't change again |
 | `docs/` | Notes on the game's internals and the unit-visual stream format |
 | `tools/` | The package script, test suites and checks |
@@ -82,7 +83,9 @@ ilspycmd -p -o decompiled "C:\Program Files (x86)\Steam\steamapps\common\BadNort
   - Viking commander traits and flags;
   - Commanders Sail In, including its war cries and flag artwork;
   - Hidden Lineup;
-  - Unit Integrity Display.
+  - Unit Integrity Display;
+  - Traits Galore: eight new commander traits and their icons;
+  - Vanilla Traits Overhaul: new stats and behaviours for the game's 13 commander traits.
 - **ABaLaQiYaShanMaiI's BadNorthNewMode (MIT)**, for the Viking control rules: settling in place, unsticking, torches only at the house, box select, and orders from the ship.
 - The install zip bundles [BepInEx](https://github.com/BepInEx/BepInEx) (LGPL-2.1) with HarmonyX, MonoMod and Mono.Cecil (MIT).
 - **Bad North** is made by Plausible Concept and published by Raw Fury. This project is not affiliated with them.

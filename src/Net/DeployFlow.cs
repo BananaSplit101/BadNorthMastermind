@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Steamworks;
 using UnityEngine;
@@ -58,6 +59,9 @@ namespace BadNorthMP.Net
             });
         }
 
+        /// <summary>Leader, just before the squads land (UI.NativeLoadout closes the game's loadout screen).</summary>
+        public static Action<IslandGameplayManager> Landing = delegate { };
+
         /// <summary>Leader (PartyDeployPatch): start choosing for a loaded island. False: nobody can fight.</summary>
         public static bool Begin(IslandGameplayManager islandManager)
         {
@@ -98,6 +102,7 @@ namespace BadNorthMP.Net
                 manager = null;
                 if (squads.Count == 0) { island.states.loadout.SetActive(true); return; }
                 ModLog.Info($"Island {Current.level}: deploying {squads.Count} squads");
+                Landing(island);
                 PartyFlow.DeploySquads(island, squads);
                 return;
             }
@@ -117,6 +122,16 @@ namespace BadNorthMP.Net
         private static float pendingUntil;
 
         public static DeploySeat Mine => Current != null ? Current.Find(Session.Me.m_SteamID) : null;
+
+        /// <summary>This player's choice from the game's loadout screen, as ready. False: not a valid choice.</summary>
+        public static bool Submit(List<int> picks)
+        {
+            var seat = Mine;
+            if (!Choosing || seat == null || !seat.Choosing || picks.Count < 1 || picks.Count > seat.quota) return false;
+            foreach (int hero in picks) if (!seat.candidates.Contains(hero)) return false;
+            Send(picks, true);
+            return true;
+        }
 
         /// <summary>Pick or unpick one of our commanders (choosing again un-readies).</summary>
         public static void Toggle(int hero)

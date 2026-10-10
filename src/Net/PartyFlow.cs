@@ -766,6 +766,18 @@ namespace BadNorthMP.Net
             return candidates;
         }
 
+        /// <summary>Defenders taking part right now: seated, here and on this version (1 outside a party campaign).</summary>
+        public static int ConnectedDefenders
+        {
+            get
+            {
+                if (!Deployed) return 1;
+                int count = 0;
+                foreach (var seat in State.seats) if (IsMember(seat.player)) count++;
+                return Math.Max(1, count);
+            }
+        }
+
         /// <summary>How many squads the party may bring to an island (the leader's config; Plugin wires it up).</summary>
         public static Func<int> MaxDeployed = () => PartyDeployment.DefaultSquads;
 

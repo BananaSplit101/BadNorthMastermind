@@ -13,6 +13,7 @@ namespace BadNorthMP
         public static ConfigEntry<float> SailInBoatSpeed;
         public static ConfigEntry<bool> HideEnemyLineup, ShowUnitIntegrity;
         public static ConfigEntry<int> MaxDeployed;
+        public static ConfigEntry<float> PerExtraDefender;
 
         public static void Bind(ConfigFile config)
         {
@@ -32,6 +33,10 @@ namespace BadNorthMP
                 "How many squads the party brings to an island (the game's own limit is 4); the rest of the commanders stay " +
                 "in reserve. An island's rescued commander counts as one. Used by the campaign leader.",
                 new AcceptableValueRange<int>(1, 10)));
+            PerExtraDefender = config.Bind("Party", "Vikings per extra defender", Game.EconomyConfig.DefaultPerExtraDefender, new ConfigDescription(
+                "How much stronger the Vikings get for each defender beyond the first: every wave's budget and the mastermind's " +
+                "island payout grow by this share (0.25: two defenders 1.25x, three 1.5x, four 1.75x). Used by the campaign leader.",
+                new AcceptableValueRange<float>(0f, 1f)));
             HideEnemyLineup = config.Bind("Interface", "Hide enemy lineup", true,
                 "In multiplayer, defenders don't see which Vikings are coming (map, island intro and results). The mastermind always does.");
             ShowUnitIntegrity = config.Bind("Interface", "Unit integrity", true,

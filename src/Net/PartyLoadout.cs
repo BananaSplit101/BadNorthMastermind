@@ -8,9 +8,15 @@ namespace BadNorthMP.Net
 {
     internal static class PartyLoadout
     {
+        /// <summary>Traits the mod adds (Traits Galore): always on offer in the draft, whatever the leader has unlocked.</summary>
+        public static Func<IEnumerable<HeroUpgradeDefinition>> ExtraTraits = () => new HeroUpgradeDefinition[0];
+
         public static string[] Catalog(bool trait)
         {
             var names = new List<string>();
+            if (trait)
+                foreach (var upgrade in ExtraTraits())
+                    if (upgrade && !names.Contains(upgrade.name)) names.Add(upgrade.name);
             if (Profile.userSave == null || Profile.userSave.inventory == null) return names.ToArray();
             var inventory = Profile.userSave.inventory;
             var source = trait ? inventory.startingTraits : inventory.startingItems;

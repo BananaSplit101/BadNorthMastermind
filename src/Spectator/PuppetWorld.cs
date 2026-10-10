@@ -285,6 +285,8 @@ namespace BadNorthMP.Spectator
             agent.animationAction = null;
             if (isStandard && squad is EnglishSquad english)
                 english.standard = agent.GetComponent<Standard>();
+            // The commander's trait shows on the copy too (size, giants' and dual-wielders' looks).
+            if (squad is EnglishSquad defenders) Traits.TraitVisuals.ApplyToCopy(agent, defenders, isStandard);
             if (squad.faction.side != Faction.Side.English)
             {
                 // Landing.Spawn sets this; VikingSquadDifficulty and others read it when the agent spawns.

@@ -54,6 +54,8 @@
     <!-- Viking commander flags (GMW's Viking Commander) and the sail-in war cries (GMW's Commanders Sail In). -->
     <EmbeddedResource Include="..\assets\VikingCommanders\*.png" LogicalName="BadNorthMP.Assets.%(Filename)%(Extension)" />
     <EmbeddedResource Include="..\assets\SailIn\*.ogg" LogicalName="BadNorthMP.Assets.%(Filename)%(Extension)" />
+    <!-- Commander trait icons (GMW's Traits Galore). -->
+    <EmbeddedResource Include="..\assets\Traits\*.png" LogicalName="BadNorthMP.Assets.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <Target Name="DeployPlugin" AfterTargets="Build">

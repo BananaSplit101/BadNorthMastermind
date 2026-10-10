@@ -47,7 +47,11 @@ namespace BadNorthMP.Game
         /// <summary>Viking commanders on this island, by commander id.</summary>
         public static readonly Dictionary<int, Squad> DeployedCommanders = new Dictionary<int, Squad>();
 
+        /// <summary>The Vikings' strength for the party's size (EconomyConfig.PartyScale; Plugin wires it to the party and config).</summary>
+        public static System.Func<float> PartyScale = () => 1f;
+
         private static Island island;
+        private static float islandScale = 1f;
         private static float entryWarChest;
         private static byte[] entryUpgrades;
         private static List<VikingCommander> entryCommanders = new List<VikingCommander>();
@@ -69,7 +73,9 @@ namespace BadNorthMP.Game
             MastermindUpgradeSave.Save();
             DeployedCommanders.Clear();
             Clock = 0f;
-            Waves = new WaveSchedule(level.wavesCount, level.bountyPerWave, level.minWaveSpacing, level.maxWaveSpacing, Clock, random);
+            // A bigger party faces more Vikings: every wave's budget grows with it.
+            islandScale = Mathf.Max(1f, PartyScale());
+            Waves = new WaveSchedule(level.wavesCount, level.bountyPerWave * islandScale, level.minWaveSpacing, level.maxWaveSpacing, Clock, random);
             ClearPlan();
             GaveUp = false;
             Started = false;
@@ -77,7 +83,9 @@ namespace BadNorthMP.Game
             Active = true;
             if (island.village)
                 island.village.onHouseDestroyed += OnHouseDestroyed;
-            ModLog.Info($"Mastermind waves: {Waves.WaveCount} waves of {level.bountyPerWave} gold, first sails in {EconomyConfig.FirstWaveDelay:0}s");
+            ModLog.Info($"Mastermind waves: {Waves.WaveCount} waves of {level.bountyPerWave * islandScale:0} gold" +
+                (islandScale > 1f ? $" ({level.bountyPerWave} x{islandScale:0.##} for the party's size)" : "") +
+                $", first sails in {EconomyConfig.FirstWaveDelay:0}s");
         }
 
         public static void End()
@@ -89,7 +97,8 @@ namespace BadNorthMP.Game
             // Only a finished island pays (not leaving mid-battle to the menu).
             if (Result != EndOfLevel.Reason.None && island)
             {
-                float total = island.levelNode.levelState.totalBounty;
+                // The payout keeps pace with the bigger waves, so the mastermind's upgrades do too.
+                float total = island.levelNode.levelState.totalBounty * islandScale;
                 float payout = EconomyConfig.IslandPayoutBase + EconomyConfig.IslandPayoutPerBounty * total;
                 if (Result == EndOfLevel.Reason.Wiped || Result == EndOfLevel.Reason.Fled)
                     payout += EconomyConfig.WinBonusPerBounty * total;
