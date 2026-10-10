@@ -263,13 +263,14 @@ namespace BadNorthMP.UI
             // Holding Alt puts a catcher over the island, so a drag draws a selection box instead of turning the camera.
             bool alt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
             if (marqueeCatcher && marqueeCatcher.activeSelf != (alt || marqueeDragging)) marqueeCatcher.SetActive(alt || marqueeDragging);
-            if (!Ordering) return;
+            if (!Ordering || LoadGate.Blocking) return;
             if (Input.GetKeyDown(KeyCode.Escape)) Deselect();
             else if (Input.GetKeyDown(KeyCode.R)) Roam();
         }
 
         private void IslandClicked(PointerEventData.InputButton button, Vector2 position)
         {
+            if (LoadGate.Blocking) return; // someone is still loading: no orders yet
             Island island = builtFor;
             if (!island || WarChestPopup.IsOpen || !battleRoot || !battleRoot.activeInHierarchy) return;
             if (button == PointerEventData.InputButton.Right)

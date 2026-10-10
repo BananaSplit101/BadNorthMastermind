@@ -16,6 +16,7 @@ namespace BadNorthMP.Net
     /// it starts anyway, so a crashed player can't hold the rest forever.
     /// The campaign map works the same way: whenever the leader arrives on the map, or sends everyone a changed
     /// campaign (Next Turn, an upgrade), voting waits until every player has that map loaded (at most MapTimeout).
+    /// While either wait is on, every player's screen is greyed out and takes no clicks.
     /// </summary>
     internal class LoadGate : MonoBehaviour
     {
@@ -45,12 +46,22 @@ namespace BadNorthMP.Net
         // Everyone: the leader's latest map wait (for the message on screen and for reporting in).
         private static readonly List<CSteamID> mapLoading = new List<CSteamID>();
         private static int heardVisit, heardRevision;
-        private static float mapHeardAt = -100f, mapListedSince = -1f, nextMapReport;
+        private static float mapHeardAt = -100f, nextMapReport;
 
         private static SteamSession Session => SteamSession.Instance;
 
         /// <summary>Voting waits: someone hasn't loaded the campaign map yet (as the leader last said).</summary>
         public static bool MapWaiting => mapLoading.Count > 0 && Time.unscaledTime - mapHeardAt < 4f && Session && Session.InLobby;
+
+        /// <summary>The island won't start: someone hasn't loaded it yet (as the leader last said).</summary>
+        private static bool IslandWaiting => loading.Count > 0 && Time.unscaledTime - loadingHeardAt < 4f && Session && Session.InLobby;
+
+        /// <summary>
+        /// Someone is still loading the island or the map: every player's screen is greyed out and takes no clicks
+        /// until everyone has it loaded. The leader's word is only trusted for 4 s, so a leader who vanishes can't
+        /// leave anyone locked out.
+        /// </summary>
+        public static bool Blocking => IslandWaiting || MapWaiting;
 
         public static void Init()
         {
@@ -229,8 +240,6 @@ namespace BadNorthMP.Net
         {
             heardVisit = visit;
             heardRevision = revision;
-            if (listed.Count == 0) mapListedSince = -1f;
-            else if (mapLoading.Count == 0 || mapListedSince < 0f) mapListedSince = Time.unscaledTime;
             mapLoading.Clear();
             mapLoading.AddRange(listed);
             mapHeardAt = Time.unscaledTime;
@@ -256,7 +265,15 @@ namespace BadNorthMP.Net
 
         // ---- Every frame ------------------------------------------------------------------------
 
+        // The shade only fades in after a moment: a wait everyone clears at once (players already on the map report in
+        // straight away) blocks clicks without flashing the screen.
+        private const float ShadeDelay = 0.25f, ShadeFade = 0.25f, ShadeAlpha = 0.6f;
+
+        private GameObject overlay;
+        private Image shade;
         private Text text;
+        private float blockedSince = -1f;
+        private bool blockedOnIsland;
 
         private void Update()
         {
@@ -275,49 +292,68 @@ namespace BadNorthMP.Net
         }
 
         /// <summary>
-        /// "Waiting for X to load..." while the leader's list isn't empty (and still fresh). A map wait only shows after
-        /// a moment: players already on the map report in at once, and that shouldn't flash a message.
+        /// While anyone is still loading (Blocking): a grey shade over everything, on top of every other screen, that
+        /// swallows every click (the game's island and map clicks go through the same UI raycast), with who it's
+        /// waiting for in the middle.
         /// </summary>
         private void ShowWaiting()
         {
-            bool island = loading.Count > 0 && Time.unscaledTime - loadingHeardAt < 4f && Session && Session.InLobby;
-            bool map = !island && MapWaiting && mapListedSince >= 0f && Time.unscaledTime - mapListedSince > 1f;
-            if (!island && !map)
+            bool island = IslandWaiting, blocking = island || MapWaiting;
+            if (blocking && blockedSince < 0f) { blockedSince = Time.unscaledTime; blockedOnIsland = island; }
+            if (!blocking)
             {
-                if (text && text.gameObject.activeSelf) text.gameObject.SetActive(false);
+                if (blockedSince >= 0f && Time.unscaledTime - blockedSince >= 1f)
+                    ModLog.Info($"Waited {Time.unscaledTime - blockedSince:0.0} s for everyone to load the {(blockedOnIsland ? "island" : "map")}");
+                blockedSince = -1f;
+                if (overlay && overlay.activeSelf) overlay.SetActive(false);
                 return;
             }
-            if (!text) Build();
+            if (!overlay) Build();
+            if (!overlay.activeSelf) overlay.SetActive(true);
+            float shown = Mathf.Clamp01((Time.unscaledTime - blockedSince - ShadeDelay) / ShadeFade);
+            // Never fully transparent: the shade has to stay a raycast target to block clicks.
+            shade.color = new Color(0.12f, 0.12f, 0.12f, Mathf.Max(0.01f, ShadeAlpha * shown));
+            text.color = new Color(1f, 1f, 1f, shown);
             var others = new List<CSteamID>(island ? loading : mapLoading);
             bool me = others.Remove(Session.Me);
-            text.text = island
-                ? me ? "Loading the island... everyone else waits for you" : $"Waiting for {Names(others)} to load..."
-                : me ? "Loading the map... everyone else waits for you" : $"Waiting for {Names(others)} to load the map...";
-            if (!text.gameObject.activeSelf) text.gameObject.SetActive(true);
+            string what = island ? "the island" : "the map";
+            text.text = (me ? $"Loading {what}... everyone else is waiting for you" : $"Waiting for {Names(others)} to load {what}...") +
+                "\n<size=22>Everything unlocks once everyone has loaded</size>";
         }
 
         private void Build()
         {
-            var canvasObject = new GameObject("BNMP Load gate");
-            DontDestroyOnLoad(canvasObject);
-            var canvas = canvasObject.AddComponent<Canvas>();
+            overlay = new GameObject("BNMP Load gate");
+            DontDestroyOnLoad(overlay);
+            var canvas = overlay.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 31000; // above the loading screen
-            var scaler = canvasObject.AddComponent<CanvasScaler>();
+            canvas.sortingOrder = 31000; // above the loading screen, the sail-in bars (30000) and every mod screen
+            var scaler = overlay.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             scaler.matchWidthOrHeight = 1f;
+            overlay.AddComponent<GraphicRaycaster>();
+
+            var shadeObject = new GameObject("Shade", typeof(RectTransform));
+            shadeObject.transform.SetParent(overlay.transform, false);
+            var shadeRect = (RectTransform)shadeObject.transform;
+            shadeRect.anchorMin = Vector2.zero;
+            shadeRect.anchorMax = Vector2.one;
+            shadeRect.offsetMin = shadeRect.offsetMax = Vector2.zero;
+            shade = shadeObject.AddComponent<Image>();
+            shade.raycastTarget = true;
+
             Font font = Resources.GetBuiltinResource<Font>("Arial.ttf");
             foreach (Voxels.TowerDefense.UI.MainMenu menu in Resources.FindObjectsOfTypeAll<Voxels.TowerDefense.UI.MainMenu>())
             {
                 var prefab = Traverse.Create(menu).Field<ButtonWidget>("textButtonPrefab").Value;
                 if (prefab && prefab.label && prefab.label.font) { font = prefab.label.font; break; }
             }
-            text = UI.NativeWidgets.Text(canvasObject.transform, font, "", 28);
+            text = UI.NativeWidgets.Text(overlay.transform, font, "", 34);
             var rect = text.rectTransform;
-            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
-            rect.anchoredPosition = new Vector2(0f, -150f);
-            rect.sizeDelta = new Vector2(10f, 30f);
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = new Vector2(10f, 80f);
         }
     }
 
