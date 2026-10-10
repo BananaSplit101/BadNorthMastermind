@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
@@ -28,7 +29,11 @@ namespace BadNorthMP.Net
         private const string VersionKey = "bnmp_client_version";
         private const float RecheckSeconds = 15f * 60f;
 
-        /// <summary>Everyone in the lobby runs this version (multiplayer only starts then).</summary>
+        /// <summary>
+        /// The lobby can play together: before a campaign, everyone runs this version (it only starts then); during
+        /// one, at least the mastermind and the campaign leader do. Anyone else on another version is left out (their
+        /// messages ignored, their commanders resting) instead of stopping the game for everybody.
+        /// </summary>
         public static bool Compatible { get; private set; }
         /// <summary>What the lobby's versions are, or how the update is going.</summary>
         public static string Status { get; private set; } = "";
@@ -40,8 +45,14 @@ namespace BadNorthMP.Net
 
         private static Updater instance;
         private static ReleaseInfo latest, staged;
-        private static bool announced;
-        private float nextCheck, nextScan;
+        // What to offer next, as a popup on the main menu: download the new version, then restart to install it.
+        private enum Offer { None, Download, Install }
+        private static Offer offer;
+        private static bool offered;
+        private float nextCheck, nextScan, nextMenuLook;
+        // When each member was first seen without a version: Steam passes it on a moment after they join.
+        private static readonly Dictionary<CSteamID, float> unversionedSince = new Dictionary<CSteamID, float>();
+        private const float VersionGrace = 10f;
         private CSteamID knownLobby = CSteamID.Nil;
 
         private static SteamSession Session => SteamSession.Instance;
@@ -70,6 +81,7 @@ namespace BadNorthMP.Net
                 nextCheck = Time.unscaledTime + RecheckSeconds;
                 StartCoroutine(Check());
             }
+            OfferOnMainMenu();
             if (!Session.Ready || !Session.InLobby)
             {
                 Compatible = false;
@@ -93,21 +105,32 @@ namespace BadNorthMP.Net
         /// <summary>Does everyone in the lobby run this version? If not, say who runs what.</summary>
         private static void Scan()
         {
-            Compatible = true;
+            var members = Session.Members();
+            var gone = new List<CSteamID>();
+            foreach (CSteamID member in unversionedSince.Keys) if (!members.Contains(member)) gone.Add(member);
+            foreach (CSteamID member in gone) unversionedSince.Remove(member);
+            bool inCampaign = PartyFlow.Active && PartyFlow.State.phase >= 2;
+            bool blocked = false, someoneNewer = false;
             var others = new StringBuilder();
-            bool someoneNewer = false;
-            foreach (CSteamID member in Session.Members())
+            foreach (CSteamID member in members)
             {
                 if (member == Session.Me) continue;
                 string version = SteamMatchmaking.GetLobbyMemberData(Session.Lobby, member, VersionKey);
-                if (version == Plugin.Version) continue;
-                Compatible = false;
+                if (version == Plugin.Version) { unversionedSince.Remove(member); continue; }
+                if (string.IsNullOrEmpty(version))
+                {
+                    if (!unversionedSince.TryGetValue(member, out float since)) unversionedSince[member] = since = Time.unscaledTime;
+                    if (Time.unscaledTime - since < VersionGrace) continue; // just joined
+                }
+                if (!inCampaign || member == Roles.MastermindId || member.m_SteamID == PartyFlow.State.authority) blocked = true;
                 if (others.Length > 0) others.Append(", ");
-                others.Append(SteamSession.NameOf(member)).Append(" has ").Append(string.IsNullOrEmpty(version) ? "no version yet" : version);
+                others.Append(SteamSession.NameOf(member)).Append(" has ").Append(string.IsNullOrEmpty(version) ? "no version" : version);
                 someoneNewer |= ReleaseInfo.Newer(version, Plugin.Version);
             }
+            Compatible = !blocked;
             if (Busy || Staged) return;
-            if (Compatible) Status = "Everyone has " + Plugin.Version;
+            if (others.Length == 0) Status = "Everyone has " + Plugin.Version;
+            else if (!blocked) Status = $"{others}: they watch until they update to {Plugin.Version}.";
             else if (someoneNewer) Status = $"{others}. You have {Plugin.Version}: " + (UpdateAvailable ? "update to play." : "an update will show here once it's released on GitHub.");
             else Status = $"{others}. They need to update to {Plugin.Version}.";
         }
@@ -133,11 +156,32 @@ namespace BadNorthMP.Net
             }
             if (!UpdateAvailable) yield break;
             ModLog.Info($"Update available: {latest.version} (this is {Plugin.Version})");
-            if (!announced)
-            {
-                announced = true;
-                MapNotice.Show($"Bad North Multiplayer {latest.version} is out. Open Multiplayer to update.", 8f);
-            }
+            if (offered) yield break;
+            offered = true;
+            offer = Offer.Download;
+            // Mid-game: say so now; the popup waits for the main menu.
+            if (!MainMenuFocused())
+                MapNotice.Show($"Bad North Multiplayer {latest.version} is out. Update from the main menu or the Multiplayer screen.", 8f);
+        }
+
+        /// <summary>Pop the pending offer up once the player is on the main menu with nothing over it.</summary>
+        private void OfferOnMainMenu()
+        {
+            if (offer == Offer.None || Time.unscaledTime < nextMenuLook) return;
+            nextMenuLook = Time.unscaledTime + 1f;
+            if (!MainMenuFocused()) return;
+            Offer showing = offer;
+            offer = Offer.None;
+            if (showing == Offer.Download) ConfirmDownload();
+            else ConfirmInstall();
+        }
+
+        /// <summary>The main menu is up and has focus (no screen or popup over it).</summary>
+        private static bool MainMenuFocused()
+        {
+            foreach (Voxels.TowerDefense.UI.MainMenu menu in Resources.FindObjectsOfTypeAll<Voxels.TowerDefense.UI.MainMenu>())
+                if (menu && menu.isActiveAndEnabled && menu.isOpen && menu.isFocussed) return true;
+            return false;
         }
 
         public static void ConfirmDownload()
@@ -145,8 +189,19 @@ namespace BadNorthMP.Net
             if (!UpdateAvailable || Busy || Staged) return;
             var popup = Voxels.TowerDefense.UI.ModalOverlay.GetInstance();
             GameUi.InitPopup(popup, "Update to " + latest.version,
-                $"Download Bad North Multiplayer {latest.version} from github.com/{Repo}/releases? The game stays open until you choose Install and restart.");
+                $"Bad North Multiplayer {latest.version} is out (you have {Plugin.Version}). Everyone in a lobby needs the same version.\n\n" +
+                $"Download it from github.com/{Repo}/releases? The game stays open until you choose to restart.");
             GameUi.AddPopupButton(popup, "Download", () => instance.StartCoroutine(instance.Download()), closes: true);
+            popup.AddCancelButton();
+        }
+
+        public static void ConfirmInstall()
+        {
+            if (!Staged) return;
+            var popup = Voxels.TowerDefense.UI.ModalOverlay.GetInstance();
+            GameUi.InitPopup(popup, "Update ready",
+                $"Bad North Multiplayer {staged.version} is downloaded. Restart the game now to install it? You can also do it later from the Multiplayer screen.");
+            GameUi.AddPopupButton(popup, "Install and restart", Install, closes: true);
             popup.AddCancelButton();
         }
 
@@ -167,19 +222,19 @@ namespace BadNorthMP.Net
                 Busy = false;
                 if (request.isNetworkError || request.isHttpError)
                 {
-                    Status = "Download failed: " + request.error;
+                    DownloadFailed("Download failed: " + request.error);
                     yield break;
                 }
                 byte[] bytes = request.downloadHandler.data;
                 if (bytes == null || bytes.Length != release.size || bytes[0] != 'M' || bytes[1] != 'Z' || Hash(bytes) != release.sha256)
                 {
-                    Status = "The download didn't match the published release. Try again later.";
+                    DownloadFailed("The download didn't match the published release. Try again later.");
                     yield break;
                 }
                 try { File.WriteAllBytes(StagePath, bytes); }
                 catch (Exception e)
                 {
-                    Status = "Couldn't save the update: " + e.Message;
+                    DownloadFailed("Couldn't save the update: " + e.Message);
                     yield break;
                 }
             }
@@ -187,6 +242,15 @@ namespace BadNorthMP.Net
             Staged = true;
             Status = $"{release.version} is ready. Install and restart when you like.";
             ModLog.Info($"Downloaded {release.version}");
+            offer = Offer.Install;
+            nextMenuLook = 0f;
+        }
+
+        private static void DownloadFailed(string why)
+        {
+            Status = why;
+            ModLog.Warn(why);
+            MapNotice.Show(why + " You can try again from the Multiplayer screen.", 8f);
         }
 
         public static void Install()

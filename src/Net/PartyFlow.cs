@@ -87,7 +87,9 @@ namespace BadNorthMP.Net
                     (Roles.IsDefender && Deployed || state.round < State.round)) return;
                 bool transition = state.token != State.token || state.phase != State.phase;
                 PreservePendingPick(state);
+                var before = State;
                 State = state; Status = r.ReadString();
+                if (!transition && state.phase == 3) AnnounceNewSeats(before, state);
                 lastStateAt = Time.unscaledTime;
                 if (transition)
                 {
@@ -147,9 +149,11 @@ namespace BadNorthMP.Net
                 RefreshContext();
                 if (sender.m_SteamID != State.authority || !Active) return;
                 var state = PartyRoster.Read(r);
-                if (state.token != State.token || state.phase != 3 || state.round < State.round || !SamePlayers(state)) return;
+                if (state.token != State.token || state.phase != 3 || state.round < State.round || !KeepsPlayers(state)) return;
                 bool transition = State.phase != 3;
+                var before = State;
                 State = state; Status = "Choose your squad below. Only its owner can issue orders.";
+                if (!transition) AnnounceNewSeats(before, state);
                 if (transition) MultiplayerScreen.CloseForBattle();
                 if (Session.IsHost) Broadcast();
             });
@@ -369,11 +373,64 @@ namespace BadNorthMP.Net
             foreach (var seat in roster.seats) if (!players.Contains(seat.player)) return false;
             return true;
         }
-        private static bool SamePlayers(PartyRoster roster)
+        /// <summary>The leader's roster keeps every seat we know (players who joined mid-campaign get added).</summary>
+        private static bool KeepsPlayers(PartyRoster roster)
         {
-            if (roster.seats.Count != State.seats.Count || roster.authority != State.authority) return false;
-            foreach (var seat in roster.seats) if (State.Find(seat.player) == null) return false;
+            if (roster.seats.Count < State.seats.Count || roster.authority != State.authority) return false;
+            foreach (var seat in State.seats) if (roster.Find(seat.player) == null) return false;
             return true;
+        }
+
+        private static float nextSeatCheck;
+
+        /// <summary>
+        /// Leader, on the campaign map: lobby members without a seat (they joined after the draft, on this version)
+        /// take one, so they fight from the next island. PartyRoster.SeatLateJoiner decides whose commander they get.
+        /// </summary>
+        public static void SeatLateJoiners()
+        {
+            if (!Roles.IsDefender || !Deployed || Profile.campaign == null || Time.unscaledTime < nextSeatCheck) return;
+            nextSeatCheck = Time.unscaledTime + 1f;
+            var heroes = Profile.campaign.heroes;
+            bool seated = false;
+            foreach (ulong player in Defenders())
+            {
+                if (State.Find(player) != null || !Updater.IsCompatible(new CSteamID(player))) continue;
+                var seat = State.SeatLateJoiner(player, id => id >= 0 && id < heroes.Count && heroes[id].availableThisTurn,
+                    out int hero, out DefenderSeat donor);
+                if (seat == null) break; // all four seats are taken: they watch
+                AnnounceSeat(player, hero, donor != null ? donor.player : 0);
+                seated = true;
+            }
+            if (!seated) return;
+            StoreOwnership();
+            PublishOwnership();
+        }
+
+        /// <summary>Everyone: say who joined the defenders mid-campaign (seats the leader added), and whose commander they got.</summary>
+        private static void AnnounceNewSeats(PartyRoster before, PartyRoster after)
+        {
+            foreach (var seat in after.seats)
+            {
+                if (before.Find(seat.player) != null) continue;
+                var owned = PartyRoster.Owned(seat);
+                int hero = owned.Count > 0 ? owned[0] : -1;
+                var donor = hero >= 0 ? before.OwnerOf(hero) : null;
+                AnnounceSeat(seat.player, hero, donor != null ? donor.player : 0);
+            }
+        }
+
+        private static void AnnounceSeat(ulong player, int hero, ulong donor)
+        {
+            ulong me = Session.Me.m_SteamID;
+            string who = player == me ? "You join" : SteamSession.NameOf(new CSteamID(player)) + " joins";
+            string name = Profile.campaign != null && hero >= 0 && hero < Profile.campaign.heroes.Count
+                ? Profile.campaign.heroes[hero].dbgName : "a commander";
+            string text = hero < 0 ? who + " the defenders and gets the next rescued commander."
+                : donor == 0 ? $"{who} the defenders with {name}."
+                : $"{who} the defenders, taking over {name} from {(donor == me ? "you" : SteamSession.NameOf(new CSteamID(donor)))}.";
+            ModLog.Info(text);
+            GameNotify.Post(text);
         }
         public static void StartDraft()
         {
@@ -656,7 +713,9 @@ namespace BadNorthMP.Net
                     assigned.Add(n);
         }
 
-        private static bool IsMember(ulong player) => Session.Members().Contains(new CSteamID(player));
+        // A seated player who's away, or back on another version, counts as absent: their commanders rest.
+        private static bool IsMember(ulong player) =>
+            Session.Members().Contains(new CSteamID(player)) && Updater.IsCompatible(new CSteamID(player));
 
         public const int MaxSquads = 4;
 

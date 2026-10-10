@@ -7,7 +7,8 @@ namespace BadNorthMP.Net
     internal sealed class DefenderSeat
     {
         public ulong player;
-        // heroes, choices, traits and items are the drafted starting slots, one entry each.
+        // heroes, choices, traits and items are the drafted starting slots, one entry each (none for a player who
+        // joined mid-campaign). A starting commander handed to someone else leaves its slot at -1.
         public int[] choices, heroes;
         public string[] traits, items;
         // Commanders rescued during the campaign, beyond the starting slots.
@@ -74,6 +75,9 @@ namespace BadNorthMP.Net
             // Starting slots stay with their player; only a rescued commander moves on.
             if (owner != null && Array.IndexOf(owner.heroes, hero) >= 0) return owner;
             if (owner != null) owner.recruits.Remove(hero);
+            // A player without a single commander (who joined mid-campaign) gets the next one before the round goes on.
+            foreach (var seat in seats)
+                if (connected(seat.player) && Owned(seat).Count == 0) { seat.recruits.Add(hero); return seat; }
             if (nextRecruit < 0 || nextRecruit >= seats.Count) nextRecruit = 0;
             for (int step = 0; step < seats.Count; step++)
             {
@@ -86,6 +90,35 @@ namespace BadNorthMP.Net
             if (owner != null) owner.recruits.Add(hero); // nobody connected: leave it where it was
             return owner;
         }
+        /// <summary>
+        /// A player who joined after the draft takes a seat in the running campaign (at most 4 seats). Whoever commands
+        /// the most commanders, if that's two or more, hands one over (on a tie, the later seat, so the leader keeps
+        /// theirs longest): one that can fight next if they have one, a rescued commander before a starting one, the
+        /// most recently gained first. Returns the new seat (null: no room, or already seated), with the commander
+        /// handed over and who had it (-1 and null when nobody had one to spare).
+        /// </summary>
+        public DefenderSeat SeatLateJoiner(ulong player, Func<int, bool> available, out int hero, out DefenderSeat donor)
+        {
+            hero = -1; donor = null;
+            if (player == 0 || phase != 3 || seats.Count >= 4 || Find(player) != null) return null;
+            foreach (var seat in seats)
+            {
+                int owned = Owned(seat).Count;
+                if (owned >= 2 && (donor == null || owned >= Owned(donor).Count)) donor = seat;
+            }
+            var joined = new DefenderSeat { player = player, choices = new int[0], heroes = new int[0],
+                traits = new string[0], items = new string[0], ready = true };
+            seats.Add(joined);
+            if (donor == null) return joined;
+            List<int> spare = Owned(donor);
+            spare.Reverse(); // rescued commanders, latest first, then the starting slots
+            int pick = spare.FindIndex(id => available(id));
+            hero = spare[pick >= 0 ? pick : 0];
+            if (!donor.recruits.Remove(hero)) donor.heroes[Array.IndexOf(donor.heroes, hero)] = -1;
+            joined.recruits.Add(hero);
+            return joined;
+        }
+
         public void Draft(IList<ulong> defenders)
         {
             if (defenders.Count < 1 || defenders.Count > 4) throw new IOException("Need 1-4 defenders");
@@ -175,7 +208,10 @@ namespace BadNorthMP.Net
             {
                 var seat = new DefenderSeat { player = r.ReadUInt64(), ready = r.ReadBoolean() };
                 int slots = r.ReadByte();
-                if (slots != (count == 1 ? 2 : 1) || seat.player == 0 || result.Find(seat.player) != null)
+                // Drafted seats have one starting slot (two for a lone defender); in a running campaign a player who
+                // joined late has none.
+                bool slotsValid = result.phase == 3 ? slots <= 2 : slots == (count == 1 ? 2 : 1);
+                if (!slotsValid || seat.player == 0 || result.Find(seat.player) != null)
                     throw new IOException("Invalid defender seats");
                 seat.choices = new int[slots]; seat.heroes = new int[slots];
                 for (int i = 0; i < slots; i++)

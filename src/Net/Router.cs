@@ -23,7 +23,8 @@ namespace BadNorthMP.Net
         {
             if (data.Length == 0)
                 return;
-            if (!Updater.Compatible || !Updater.IsCompatible(sender)) return;
+            // Only a player on another version is ignored; everyone else carries on.
+            if (!Updater.IsCompatible(sender)) return;
             Handle(sender, data);
         }
 

@@ -117,7 +117,7 @@ namespace BadNorthMP.Net {
  public void Send(Steamworks.CSteamID to,byte[] data){if(to!=Me)sent.Add(new Sent{to=to,data=data});}public void Broadcast(byte[] data){foreach(var p in members)Send(p,data);}public void Leave(string s){Lobby=Steamworks.CSteamID.Nil;}
  public static string NameOf(Steamworks.CSteamID p){return p.m_SteamID.ToString();}
  }
- internal static class Updater{public static bool Compatible=true;}
+ internal static class Updater{public static bool Compatible=true;public static HashSet<ulong> outdated=new HashSet<ulong>();public static bool IsCompatible(Steamworks.CSteamID p){return !outdated.Contains(p.m_SteamID);}}
  internal static class Router{public delegate void Handler(Steamworks.CSteamID p,BinaryReader r);public static Dictionary<MsgType,Handler> handlers=new Dictionary<MsgType,Handler>();public static void On(MsgType t,Handler h){handlers[t]=h;}
  public static void Receive(ulong sender,byte[] data){using(var r=new BinaryReader(new MemoryStream(data))){var t=(MsgType)r.ReadByte();handlers[t](new Steamworks.CSteamID(sender),r);}}}
  internal class MultiplayerGame : UnityEngine.MonoBehaviour {public static MultiplayerGame Instance=new MultiplayerGame();}
@@ -131,7 +131,7 @@ namespace BadNorthMP.Net {
  static byte[] Order(int token,int round,int hero,int target,bool action){return Packet.Build(action?MsgType.DefenderAction:MsgType.DefenderMove,w=>{w.Write(token);w.Write(round);w.Write(Voxels.TowerDefense.Profile.campaign.seed);w.Write(BadNorthMP.GameAccess.CurrentIsland.levelNode.index);w.Write(hero);w.Write(target);});}
  public static void Run(){
  Directory.CreateDirectory(BepInEx.Paths.ConfigPath);
- try {Core();Network();Recruits();Loadouts();Crashes();Reconnect();Deletes();Console.WriteLine(checks+" party/draft/ownership/order checks passed against actual source (game and Steam mocked).");}
+ try {Core();Network();Recruits();Loadouts();Crashes();Reconnect();Deletes();LateJoin();Console.WriteLine(checks+" party/draft/ownership/order checks passed against actual source (game and Steam mocked).");}
  finally{string path=Path.GetFullPath(BepInEx.Paths.ConfigPath);if(!path.StartsWith(Path.Combine(Path.GetFullPath(Path.GetTempPath()),"BNMP-party-test-"),StringComparison.OrdinalIgnoreCase))throw new Exception("Unsafe test cleanup target");Directory.Delete(path,true);}
  }
  // A guest who hears nothing from the host during the draft drops the session and asks for the state again; the host answers.
@@ -233,6 +233,47 @@ namespace BadNorthMP.Net {
   var heroes=Voxels.TowerDefense.Profile.campaign.heroes;for(int i=heroes.Count;i<10;i++)heroes.Add(new Voxels.TowerDefense.HeroDefinition(i));}
  static List<Voxels.TowerDefense.HeroDefinition> Deploy(Voxels.TowerDefense.HeroDefinition rescue){var manager=new Voxels.TowerDefense.IslandGameplayManager();manager.states.running.active=false;manager.island.levelNode.heroDefinition=rescue;typeof(PartyDeployPatch).GetMethod("Prefix",BindingFlags.NonPublic|BindingFlags.Static).Invoke(null,new object[]{manager});return Voxels.TowerDefense.SquadSpawner.deployed;}
  static int Count(List<Voxels.TowerDefense.HeroDefinition> list,ulong player){int n=0;foreach(var h in list)if(PartyFlow.State.Owns(player,Voxels.TowerDefense.Profile.campaign.heroes.IndexOf(h)))n++;return n;}
+ // Someone who joins mid-campaign gets a seat while the leader is on the map; whoever has two or more commanders hands one over.
+ static void LateJoin(){
+ var s=SteamSession.Instance;Party(1);
+ Check(PartyFlow.State.seats.Count==1&&PartyRoster.Owned(PartyFlow.State.seats[0]).Count==2,"lone defender should start with two commanders");
+ var before=Copy(PartyFlow.State);
+ s.members.Add(Id(3));UnityEngine.Time.unscaledTime+=2;PartyFlow.SeatLateJoiners();
+ Check(PartyFlow.State.seats.Count==2&&PartyFlow.State.Owns(3,1)&&!PartyFlow.State.Owns(2,1)&&PartyFlow.State.Owns(2,0),"late joiner did not take the spare commander");
+ var own=Last(MsgType.PartyOwnership);
+ var copy=Copy(PartyFlow.State);Check(copy.Owns(3,1)&&copy.Find(3).heroes.Length==0&&copy.Find(2).heroes[1]==-1&&!copy.Owns(2,1),"late seat lost on the wire");
+ UnityEngine.Time.unscaledTime+=2;PartyFlow.SeatLateJoiners();Check(PartyFlow.State.seats.Count==2&&PartyFlow.State.Owns(3,1),"late joiner seated twice");
+ // Everyone else accepts the leader's roster with the added seat and says who joined.
+ var leaderState=PartyFlow.State;PartyFlow.State=before;s.Me=Id(1);BadNorthMP.UI.GameNotify.last=null;s.sent.Clear();
+ Router.Receive(2,own);
+ Check(PartyFlow.State.seats.Count==2&&PartyFlow.State.Owns(3,1),"guest refused the roster with a late joiner");
+ Check(BadNorthMP.UI.GameNotify.last!=null&&BadNorthMP.UI.GameNotify.last.Contains("3 joins the defenders, taking over")&&BadNorthMP.UI.GameNotify.last.Contains("from 2"),"late join not announced: "+BadNorthMP.UI.GameNotify.last);
+ Check(Last(MsgType.PartyState).Length>0,"host did not pass the late seat on");
+ // A roster that drops a seat is still refused.
+ var shrunk=Copy(PartyFlow.State);shrunk.seats.RemoveAt(1);shrunk.Find(2).heroes[1]=1;
+ Router.Receive(2,Packet.Build(MsgType.PartyOwnership,shrunk.Write));Check(PartyFlow.State.seats.Count==2,"roster without a seated player accepted");
+ s.Me=Id(2);PartyFlow.State=leaderState;
+ // Nobody has a commander to spare: the newcomer is seated and gets the next rescue before the round goes on.
+ Party(2);var heroes=Voxels.TowerDefense.Profile.campaign.heroes;
+ s.members.Add(Id(4));UnityEngine.Time.unscaledTime+=2;PartyFlow.SeatLateJoiners();
+ Check(PartyFlow.State.Find(4)!=null&&PartyRoster.Owned(PartyFlow.State.Find(4)).Count==0&&PartyFlow.State.Owns(2,0)&&PartyFlow.State.Owns(3,1),"newcomer took a commander nobody could spare");
+ int nextBefore=PartyFlow.State.nextRecruit;Deploy(heroes[4]);
+ Check(PartyFlow.State.Owns(4,4)&&PartyFlow.State.nextRecruit==nextBefore,"newcomer without commanders didn't get the rescue first");heroes[4].recruited=true;
+ Deploy(heroes[5]);Check(!PartyFlow.State.Owns(4,5),"newcomer kept jumping the rescue queue");
+ // Players on another version aren't seated; a full party (four seats) has no room.
+ Party(1);BadNorthMP.Net.Updater.outdated.Add(3);s.members.Add(Id(3));UnityEngine.Time.unscaledTime+=2;PartyFlow.SeatLateJoiners();
+ Check(PartyFlow.State.Find(3)==null&&PartyFlow.State.Owns(2,1),"outdated player seated");BadNorthMP.Net.Updater.outdated.Clear();
+ Party(4);s.members.Add(Id(6));UnityEngine.Time.unscaledTime+=2;PartyFlow.SeatLateJoiners();Check(PartyFlow.State.seats.Count==4&&PartyFlow.State.Find(6)==null,"fifth defender seated");
+ // Who hands over: the most commanders (two or more), a tie goes to the later seat; one that can fight first, rescued before starting.
+ var roster=new PartyRoster();roster.Draft(new ulong[]{2,3});roster.AssignStartingHeroes();roster.phase=3;roster.seats[0].recruits.Add(5);roster.seats[1].recruits.Add(6);
+ var seat=roster.SeatLateJoiner(7,id=>id!=6,out int given,out DefenderSeat donor);
+ Check(seat!=null&&donor==roster.Find(3)&&given==1&&roster.Find(3).heroes[0]==-1&&roster.Owns(7,1)&&roster.Owns(3,6),"wrong commander handed over");
+ roster=new PartyRoster();roster.Draft(new ulong[]{2,3});roster.AssignStartingHeroes();roster.phase=3;roster.seats[0].recruits.Add(5);
+ roster.SeatLateJoiner(7,id=>true,out given,out donor);Check(donor==roster.Find(2)&&given==5&&roster.Owns(2,0),"rescued commander should go before a starting one");
+ // A seat without starting slots is only valid once the campaign runs.
+ roster=new PartyRoster();roster.Draft(new ulong[]{2,3});roster.seats[1].choices=new int[0];roster.seats[1].heroes=new int[0];roster.seats[1].traits=new string[0];roster.seats[1].items=new string[0];
+ bool refused=false;try{Copy(roster);}catch(IOException){refused=true;}Check(refused,"draft seat without a slot accepted");
+ }
  static void Recruits(){
  // Rescued commanders go round the table: leader (2), then 3, 4, 5; disconnected players are skipped.
  Party(4);var heroes=Voxels.TowerDefense.Profile.campaign.heroes;

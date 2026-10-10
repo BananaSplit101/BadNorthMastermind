@@ -215,6 +215,10 @@ namespace BadNorthMP.UI
                         ? "You're watching the battle. Plan your waves at the bottom of the screen; the coin at the top right opens the war chest."
                         : PartyFlow.Deployed ? "The defender's campaign map and live battles open here automatically, with your army controls."
                             : "Press Start to choose a multiplayer save or create a new campaign. Defenders then choose their commanders.");
+            else if (Roles.IsRemoteDefender && PartyFlow.Deployed && PartyFlow.Mine == null)
+                sb.AppendLine(PartyFlow.State.seats.Count >= 4
+                    ? "The campaign is under way and the party is full (four defenders), so you're watching."
+                    : "The campaign is under way: you join the defenders the next time the party is on the campaign map, and fight from the next island.");
             else if (Roles.IsRemoteDefender)
                 sb.AppendLine("The campaign map and battles open automatically. Click an island to vote where to go next; in battle, select your own squad and click a tile to move.");
             else

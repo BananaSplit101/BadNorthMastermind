@@ -88,7 +88,7 @@ namespace BadNorthMP.Net
             if (!PartyFlow.Deployed) return result;
             var members = Session.Members();
             foreach (var seat in PartyFlow.State.seats)
-                if (members.Contains(new CSteamID(seat.player))) result.Add(seat.player);
+                if (members.Contains(new CSteamID(seat.player)) && Updater.IsCompatible(new CSteamID(seat.player))) result.Add(seat.player);
             return result;
         }
 
@@ -208,6 +208,8 @@ namespace BadNorthMP.Net
                 if (Roles.IsDefender && (Votes.Count > 0 || deadline >= 0f)) Clear();
                 return;
             }
+            // Players who joined after the draft get a seat while the leader is on the map, to fight from the next island.
+            if (LeaderOnMap()) PartyFlow.SeatLateJoiners();
             // Drop votes from players who left, and (while the map is up) votes the map no longer allows.
             List<ulong> voters = Voters();
             bool validate = LeaderIdle() && Time.unscaledTime >= nextValidation;
