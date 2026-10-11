@@ -180,6 +180,7 @@ namespace BadNorthMP.Spectator
                         case MsgType.Dust: Singleton<DustParticles>.instance.SpawnParticles(r.ReadVector3(), r.ReadVector3()); break;
                         case MsgType.SquadTiles: Net.NativeDefenderControls.ApplyTiles(r); break;
                         case MsgType.SquadEvac: Net.NativeDefenderControls.ApplyEvac(r); break;
+                        case MsgType.SquadAbilities: Net.SquadAbilityMirror.Apply(r); break;
                         case MsgType.CommanderSquads:
                             commanderSquads.Clear();
                             for (int count = r.ReadByte(), i = 0; i < count; i++)

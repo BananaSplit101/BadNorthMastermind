@@ -26,6 +26,7 @@ namespace BadNorthMP.Net
         {
             initialized.Clear(); flagColliders.Clear(); leaderTiles.Clear(); canFlee.Clear();
             tilesReceived = false; nextTiles = nextReport = 0; lastReport = null;
+            SquadAbilityMirror.Reset();
         }
 
         /// <summary>Until the leader's first tile update arrives, estimate each squad's tile from where its hero stands.</summary>
@@ -219,6 +220,21 @@ namespace BadNorthMP.Net
             fields.Field("inFormation").SetValue(inFormation.Count > 1 + pike.components.Count / 3);
         }
 
+        /// <summary>Why the leader's copy of the ability can't be used now (the sender's buttons don't show the leader's cooldowns).</summary>
+        private static string Blocked(ActiveAbility ability)
+        {
+            if (!ability) return "Your squad doesn't have that ability.";
+            if (ability.isBanned) return "This commander's trait doesn't allow that.";
+            if (ability.isOutOfCharges) return "That ability has no uses left on this island.";
+            if (ability.isActive) return "That ability is already in use.";
+            if (ability.isCoolingDown) return $"That ability is recharging ({Mathf.CeilToInt(ability.cooldownRemaining)} s).";
+            if (ability.isBlockedByOther) return "Your squad is busy with another ability (or healing).";
+            if (ability is PikeChargeAbility charge)
+                return charge.components != null && charge.components.Count <= 1
+                    ? "No pikemen are left to charge." : "Pike Charge needs the squad standing in formation on its tile.";
+            return "That ability is unavailable.";
+        }
+
         public static bool Execute(EnglishSquad squad, BinaryReader reader, out string result)
         {
             string type = reader.ReadString(); byte kind = reader.ReadByte(); int target = reader.ReadInt32();
@@ -230,9 +246,7 @@ namespace BadNorthMP.Net
             if (ability is PikeChargeAbility pikes) RefreshPikeFormation(pikes);
             if (!ability || ability.IsBlocked())
             {
-                result = ability is PikeChargeAbility charge && charge.components != null && charge.components.Count <= 1
-                    ? "No pikemen are left to charge." : ability is PikeChargeAbility
-                    ? "Pike Charge needs the squad standing in formation on its tile." : "That ability is unavailable.";
+                result = Blocked(ability);
                 return false;
             }
             if (kind == 0 && ability is NavSpotTargetableAbility)

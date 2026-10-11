@@ -10,14 +10,17 @@ using Random = UnityEngine.Random;
 namespace BadNorthMP.Traits
 {
     /// <summary>
-    /// GMW's Traits Galore (update 3), ported with permission: eight new commander traits. Damage and attack speed act on
-    /// every hit and on each class's own timing (TraitDamagePatch, TraitTiming), so they work for infantry too.
+    /// GMW's Traits Galore (update 3), ported with permission: six new commander traits (its Mad and Unpopular were taken
+    /// out in 1.0.9). Damage and attack speed act on every hit and on each class's own timing (TraitDamagePatch,
+    /// TraitTiming), so they work for infantry too.
     /// </summary>
     internal static class TraitsGalore
     {
         public const string Axe = "Hero_Trait_Axe", Barricade = "Hero_Trait_Barricade", Coward = "Hero_Trait_Coward",
-            LightWeapons = "Hero_Trait_Light_Weapons", Mad = "Hero_Trait_Mad", Short = "Hero_Trait_Short", Sick = "Hero_Trait_Sick",
-            Unpopular = "Hero_Trait_Unpopular";
+            LightWeapons = "Hero_Trait_Light_Weapons", Short = "Hero_Trait_Short", Sick = "Hero_Trait_Sick";
+
+        // Taken out: commanders saved with them load with the replacement trait instead.
+        private const string RetiredMad = "Hero_Trait_Mad", RetiredUnpopular = "Hero_Trait_Unpopular";
 
         public static void Register()
         {
@@ -29,22 +32,20 @@ namespace BadNorthMP.Traits
                 "Flight over fight. +15% Movement Speed, but they are terrified of Brutes and will move erratically if one gets within 3 tiles.", "trait_coward.png");
             CustomTraits.Register<TraitLightWeapons>(LightWeapons, "Light Weapons", "-15% Damage, +30% Attack Speed",
                 "Equips the squad with lighter, more agile weapons. They suffer a 15% reduction in damage per hit but benefit from a 30% increase in attack speed.", "trait_lightweapons.png");
-            CustomTraits.Register<TraitMad>(Mad, "Mad", "+40% Damage, +50% Resistance, Highly Aggressive",
-                "These warriors are completely reckless. They deal 40% more damage and take 50% less, but will ignore movement commands and blindly charge the nearest enemy unless ordered to replenish.", "trait_mad.png");
             CustomTraits.Register<TraitShort>(Short, "Short", "+11 Squad Size, 1 HP, 25% Damage",
                 "This squad is vertically challenged. Max squad size is increased by 11. However, they are weak, dealing only 25% damage and dying in a single hit.", "trait_short.png");
             CustomTraits.Register<TraitSick>(Sick, "Sick", "Attacks Inflict a Deadly Infection",
                 "This squad is suffering from illness, but their attacks infect enemies, dealing 20% of the enemy's max health as damage per second.", "trait_sick.png");
-            CustomTraits.Register<TraitUnpopular>(Unpopular, "Unpopular", "-3 Max Squad Size",
-                "This commander is notoriously difficult to work with. Fewer soldiers are willing to join their squad.", "trait_unpopular.png");
+            CustomTraits.Retire(RetiredMad, VanillaTraitsOverhaul.Sharp);
+            CustomTraits.Retire(RetiredUnpopular, LightWeapons);
         }
 
         /// <summary>Damage the squad deals (×) for its commander's trait.</summary>
         public static float DamageDealt(string trait) =>
-            trait == Axe ? 2f : trait == LightWeapons ? 0.85f : trait == Mad ? 1.4f : trait == Short ? 0.25f : 1f;
+            trait == Axe ? 2f : trait == LightWeapons ? 0.85f : trait == Short ? 0.25f : 1f;
 
         /// <summary>Damage the squad takes (×).</summary>
-        public static float DamageTaken(string trait) => trait == Mad ? 0.5f : trait == Short ? 1.5f : 1f;
+        public static float DamageTaken(string trait) => trait == Short ? 1.5f : 1f;
 
         /// <summary>Time between the squad's attacks (×): above 1 is slower.</summary>
         public static float AttackTime(string trait) => trait == Axe ? 1.5f : trait == LightWeapons ? 0.77f : 1f;
@@ -69,30 +70,12 @@ namespace BadNorthMP.Traits
         }
     }
 
-    internal class TraitMad : HeroUpgradeDefinition
-    {
-        public override void OnAppliedToSquad(EnglishSquad squad, int upgradeLevel)
-        {
-            base.OnAppliedToSquad(squad, upgradeLevel);
-            squad.gameObject.AddComponent<MadTraitLogic>().squad = squad;
-        }
-    }
-
     internal class TraitShort : HeroUpgradeDefinition
     {
         public override void OnAppliedToSquad(EnglishSquad squad, int upgradeLevel)
         {
             base.OnAppliedToSquad(squad, upgradeLevel);
             squad.maxCount += 11;
-        }
-    }
-
-    internal class TraitUnpopular : HeroUpgradeDefinition
-    {
-        public override void OnAppliedToSquad(EnglishSquad squad, int upgradeLevel)
-        {
-            base.OnAppliedToSquad(squad, upgradeLevel);
-            squad.maxCount = Mathf.Max(1, squad.maxCount - 3);
         }
     }
 
@@ -128,7 +111,8 @@ namespace BadNorthMP.Traits
 
         private void Update()
         {
-            if (!squad || !squad.heroAgent || !squad.heroAgent.aliveState.active || Indoors(squad) || Time.time < nextCheck) return;
+            // Only where battles are simulated: on a teammate's copy it moved the squad's tile locally, out of step with the leader.
+            if (!TraitRules.Simulates || !squad || !squad.heroAgent || !squad.heroAgent.aliveState.active || Indoors(squad) || Time.time < nextCheck) return;
             nextCheck = Time.time + 0.5f;
             Agent brute = Nearest(squad, 3f, agent => agent.name.IndexOf("Viking_Tank", System.StringComparison.Ordinal) >= 0);
             if (!brute || !squad.navSpotOccupant) return;
@@ -160,24 +144,6 @@ namespace BadNorthMP.Traits
         }
     }
 
-    /// <summary>Mad: the squad charges the nearest Viking, whatever it's told, unless it was sent to replenish.</summary>
-    internal class MadTraitLogic : MonoBehaviour
-    {
-        public EnglishSquad squad;
-        public bool replenishing;
-        private float nextCheck;
-
-        private void Update()
-        {
-            if (!squad || !squad.heroAgent || !squad.heroAgent.aliveState.active || replenishing || CowardTraitLogic.Indoors(squad) || Time.time < nextCheck) return;
-            nextCheck = Time.time + 0.5f;
-            Agent target = CowardTraitLogic.Nearest(squad, float.MaxValue, agent => true);
-            if (!target || !squad.navSpotOccupant) return;
-            NavSpot spot = NavSpot.GetNavSpot(target.transform.position, false);
-            if (spot && squad.navSpotOccupant.navSpot != spot) squad.navSpotOccupant.SetNavSpot(spot, false);
-        }
-    }
-
     /// <summary>Sick: an infected Viking loses 20% of its max health every second for 5 seconds (hitting again renews it).</summary>
     internal class SickDot : MonoBehaviour
     {
@@ -201,7 +167,7 @@ namespace BadNorthMP.Traits
         }
     }
 
-    // ---- Barricade (the house can't be harmed while the squad replenishes in it) and Mad (replenishing calms it) ------
+    // ---- Barricade (the house can't be harmed while the squad replenishes in it) -----------------------------------
 
     internal class HouseBarricade : MonoBehaviour
     {
@@ -214,10 +180,7 @@ namespace BadNorthMP.Traits
     {
         private static void Postfix(ReplenishAbility __instance, object location)
         {
-            if (!TraitRules.Simulates || !__instance.squad) return;
-            var mad = __instance.squad.GetComponent<MadTraitLogic>();
-            if (mad) mad.replenishing = true;
-            if (!TraitRules.Has(__instance.squad, TraitsGalore.Barricade)) return;
+            if (!TraitRules.Simulates || !__instance.squad || !TraitRules.Has(__instance.squad, TraitsGalore.Barricade)) return;
             var house = (location as MonoBehaviour) ? ((MonoBehaviour)location).GetComponent<House>() : null;
             if (house) (house.GetComponent<HouseBarricade>() ?? house.gameObject.AddComponent<HouseBarricade>()).squads++;
         }
@@ -230,10 +193,7 @@ namespace BadNorthMP.Traits
 
         private static void Prefix(ReplenishAbility __instance)
         {
-            if (!TraitRules.Simulates || !__instance.squad) return;
-            var mad = __instance.squad.GetComponent<MadTraitLogic>();
-            if (mad) mad.replenishing = false;
-            if (!TraitRules.Has(__instance.squad, TraitsGalore.Barricade) || Location == null) return;
+            if (!TraitRules.Simulates || !__instance.squad || !TraitRules.Has(__instance.squad, TraitsGalore.Barricade) || Location == null) return;
             var place = Location.GetValue(__instance) as MonoBehaviour;
             var barricade = place ? place.GetComponent<HouseBarricade>() : null;
             if (barricade) barricade.squads--;

@@ -49,6 +49,18 @@ namespace BadNorthMP.Traits
             return trait;
         }
 
+        /// <summary>
+        /// A trait that was taken out. Saves find traits by name (SerializableHeroUpgrade.PostLoad), so a commander saved
+        /// with it loads with the replacement instead, and is saved under the replacement's name from then on. The old
+        /// name is only in the lookup, never in the list, so it's never rolled or offered again.
+        /// </summary>
+        public static void Retire(string id, string replacement)
+        {
+            HeroUpgradeDefinition to = ResourceList<HeroUpgradeDefinition>.Get(replacement);
+            if (!to) { ModLog.Warn($"Retired trait {id}: its replacement {replacement} wasn't found"); return; }
+            ResourceList<HeroUpgradeDefinition>.dictionary[id] = to;
+        }
+
         /// <summary>The game's own trait type (its icon mask), so the new traits look like the others.</summary>
         private static HeroUpgradeType TraitType()
         {

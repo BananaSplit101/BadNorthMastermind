@@ -280,6 +280,8 @@ namespace BadNorthMP.Traits
             {
                 if (trait == VanillaTraitsOverhaul.Popular) replenish.replenishTime *= 0.85f;
                 if (trait == VanillaTraitsOverhaul.RousingSpeeches) replenish.replenishTime *= 0.68f;
+                // Here too, not only on the leader: a teammate's button then shows the ban instead of a click the leader refuses.
+                if (trait == VanillaTraitsOverhaul.Mountain) replenish.BanAbility("Giants cannot replenish", null, null);
             }
             foreach (SerializableHeroUpgrade upgrade in __instance.hero.upgrades)
             {

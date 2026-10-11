@@ -66,6 +66,9 @@ namespace BadNorthMP.Net
         // Which squads could flee, as last sent; checked a few times a second.
         private static string sentEvac = "";
         private static float nextEvac;
+        // Each squad's abilities (cooldown, uses left, blocked) as last sent, and when everything was last re-sent.
+        private static string sentAbilities = "";
+        private static float nextAbilities, nextAbilityRefresh;
 
         public static void Reset()
         {
@@ -85,6 +88,8 @@ namespace BadNorthMP.Net
             sentTileSquads.Clear();
             sentEvac = "";
             nextEvac = 0f;
+            sentAbilities = "";
+            nextAbilities = nextAbilityRefresh = 0f;
         }
 
         // ---- Things appearing ----------------------------------------------------------------
@@ -318,6 +323,41 @@ namespace BadNorthMP.Net
             SendHouseChanges();
             SendSquadTiles();
             SendSquadEvac();
+            SendSquadAbilities();
+        }
+
+        /// <summary>
+        /// Each squad's abilities as the leader has them, for the owners' buttons (SquadAbilityMirror): their copies never
+        /// run an ability themselves, so without this they never showed a cooldown, used a charge or saw the squad busy
+        /// healing, and every click in that time was refused. Sent when something changes (checked ten times a second),
+        /// and all of it every 2 s.
+        /// </summary>
+        private static void SendSquadAbilities()
+        {
+            if (Time.unscaledTime < nextAbilities || Profile.campaign == null)
+                return;
+            nextAbilities = Time.unscaledTime + 0.1f;
+            var squads = new List<KeyValuePair<int, List<SquadAbilityMirror.State>>>();
+            var key = new System.Text.StringBuilder();
+            foreach (Squad candidate in GameAccess.PlayerSquads)
+            {
+                var squad = candidate as EnglishSquad;
+                if (!squad || squad.hero == null || squad.upgradeManager == null) continue;
+                int hero = Profile.campaign.heroes.IndexOf(squad.hero);
+                List<SquadAbilityMirror.State> states = SquadAbilityMirror.Capture(squad);
+                if (states.Count == 0) continue;
+                squads.Add(new KeyValuePair<int, List<SquadAbilityMirror.State>>(hero, states));
+                key.Append(hero).Append(':');
+                foreach (SquadAbilityMirror.State state in states) key.Append(state.hash).Append(',').Append(state.flags).Append(',').Append(state.charges).Append(';');
+            }
+            string sent = key.ToString();
+            bool refresh = Time.unscaledTime >= nextAbilityRefresh;
+            if (sent == sentAbilities && !refresh)
+                return;
+            sentAbilities = sent;
+            nextAbilityRefresh = Time.unscaledTime + 2f;
+            // Not kept for late joiners (unreliable): it changes all the time, and the refresh repairs a lost one.
+            BattleStream.Send(Packet.Build(MsgType.SquadAbilities, w => SquadAbilityMirror.Write(w, squads)), reliable: false);
         }
 
         /// <summary>

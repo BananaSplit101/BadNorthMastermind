@@ -39,6 +39,7 @@ namespace BadNorthMP.Net
         SquadEvac = 34,   // defender -> watchers: byte count, then per squad: int heroIndex, bool canFlee
         SailIn = 36,          // leader -> watchers: byte phase (0 follow, 1 zoom out), int shipId, Vector3 shore: a commander's boat cinematic
         CommanderSquads = 35, // leader -> watchers: byte count, then (int commanderId, int squadId, byte trait, int flagAgentId): the mastermind's Viking commanders
+        SquadAbilities = 37,  // leader -> watchers: byte squads, then per squad: int heroIndex, byte count, then per ability: int typeHash, byte flags, ushort cooldown (1/100 s), short charges
         LastBattleMessage = 39,
 
         // Lobby, campaign and mastermind messages (handled by Router.On).
