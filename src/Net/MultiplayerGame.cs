@@ -68,6 +68,7 @@ namespace BadNorthMP.Net
             BattleSync.Init();
             MastermindNet.Init();
             DeployFlow.Init();
+            Pings.Init();
         }
 
         private void Update()

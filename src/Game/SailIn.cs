@@ -245,13 +245,16 @@ namespace BadNorthMP.Game
                     agent.transform.position = home.entranceTransform.position;
                     ReplenishComponent replenish = agent.GetOrAddComponent<ReplenishComponent>();
                     Traverse.Create(replenish).Field("location").SetValue(home);
-                    replenish.indoors.SetActive(true);
+                    // The commander plants their flag on the house before going in, as the game does: indoors hides the
+                    // soldier, flag pole included, and a hidden flag can't be planted ("Coroutine couldn't be started
+                    // because the game object 'Billboard' is inactive").
                     if (agent == squad.heroAgent)
                     {
-                        indoors.Insert(0, replenish);
                         FlagPole pole = Traverse.Create(replenish).Field<FlagPole>("flagPole").Value;
-                        if (pole) pole.Plant(home.flagTransform);
+                        if (pole && pole.gameObject.activeInHierarchy) pole.Plant(home.flagTransform);
                     }
+                    replenish.indoors.SetActive(true);
+                    if (agent == squad.heroAgent) indoors.Insert(0, replenish);
                     else indoors.Add(replenish);
                 }
             }

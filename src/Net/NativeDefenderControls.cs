@@ -27,6 +27,7 @@ namespace BadNorthMP.Net
             initialized.Clear(); flagColliders.Clear(); leaderTiles.Clear(); canFlee.Clear();
             tilesReceived = false; nextTiles = nextReport = 0; lastReport = null;
             SquadAbilityMirror.Reset();
+            HouseOccupants.Reset();
         }
 
         /// <summary>Until the leader's first tile update arrives, estimate each squad's tile from where its hero stands.</summary>
@@ -299,7 +300,16 @@ namespace BadNorthMP.Net
                 if (spot) NativeDefenderControls.Send(__instance, 0, GameAccess.CurrentIsland.navSpotter.navSpots.IndexOf(spot));
             }
             else if (__instance is HouseTargetableAbility house)
-                NativeDefenderControls.Send(__instance, 1, house.locations.IndexOf((SquadReplenishLocation)__args[0]));
+            {
+                var location = (SquadReplenishLocation)__args[0];
+                // Taken on the leader's island, though it looks free here: say so instead of sending an order it refuses.
+                if (HouseOccupants.TakenFrom(location, house.squad, out int hero))
+                {
+                    string owner = HouseOccupants.OwnerName(hero);
+                    RemoteDefender.Refused(owner == "" ? "That house is taken." : owner == "You" ? "One of your squads is in that house." : owner + "'s squad is in that house.");
+                }
+                else NativeDefenderControls.Send(__instance, 1, house.locations.IndexOf(location));
+            }
             else if (__instance is EvacuateAbility)
             {
                 var locations = Traverse.Create(__instance).Field<List<SquadEvacuationLocation>>("locations").Value;
@@ -307,6 +317,18 @@ namespace BadNorthMP.Net
             }
             else NativeDefenderControls.Send(__instance, 3, -1);
             return false;
+        }
+    }
+
+    /// <summary>A teammate's house targets: the houses taken on the leader's island aren't lit up as free.</summary>
+    [HarmonyPatch(typeof(HouseTargetableAbility), "UpdateTargets")]
+    internal static class RemoteHouseTargetsPatch
+    {
+        private static void Postfix(HouseTargetableAbility __instance)
+        {
+            if (!Roles.IsRemoteDefender || !Spectator.SpectatorSession.Active || HouseOccupants.Current.Count == 0 || __instance.locations == null) return;
+            foreach (SquadReplenishLocation location in __instance.locations)
+                if (location && HouseOccupants.TakenFrom(location, __instance.squad, out int ignored)) location.SetHighlight(false);
         }
     }
 

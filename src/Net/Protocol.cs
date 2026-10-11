@@ -40,6 +40,7 @@ namespace BadNorthMP.Net
         SailIn = 36,          // leader -> watchers: byte phase (0 follow, 1 zoom out), int shipId, Vector3 shore: a commander's boat cinematic
         CommanderSquads = 35, // leader -> watchers: byte count, then (int commanderId, int squadId, byte trait, int flagAgentId): the mastermind's Viking commanders
         SquadAbilities = 37,  // leader -> watchers: byte squads, then per squad: int heroIndex, byte count, then per ability: int typeHash, byte flags, ushort cooldown (1/100 s), short charges
+        HouseOccupants = 38,  // leader -> watchers: byte count, then per occupied house: byte houseIndex, int heroIndex, bool inside
         LastBattleMessage = 39,
 
         // Lobby, campaign and mastermind messages (handled by Router.On).
@@ -75,6 +76,7 @@ namespace BadNorthMP.Net
         CommanderSell = 75,     // mastermind -> leader: long session, int commanderId: sell it back for a share of its price
         DeployState = 76,       // leader -> all: PartyDeployment (who brings how many squads, everyone's picks, ready)
         DeployPick = 77,        // defender -> leader: int token, byte count, byte[] commanders, bool ready
+        PlayerPing = 78,            // defender -> the other defenders: int levelIndex, byte kind, Vector3 position
         CampaignRequest = 68,   // watcher -> leader: (empty) the current campaign again; sent while it hasn't arrived
         CommanderOrder = 66,  // mastermind -> leader: int commanderId, byte kind (0 move, 1 burn, 2 release), int target (tile or house)
         VoteState = 63,      // leader -> all: int token, int seed, float secondsLeft, float launchSecondsLeft, bool nextTurnAllowed, byte count, (ulong player, int option)*, int decided

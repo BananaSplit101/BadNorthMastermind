@@ -69,6 +69,9 @@ namespace BadNorthMP.Net
         // Each squad's abilities (cooldown, uses left, blocked) as last sent, and when everything was last re-sent.
         private static string sentAbilities = "";
         private static float nextAbilities, nextAbilityRefresh;
+        // Who's in which house, as last sent.
+        private static string sentOccupants = "";
+        private static float nextOccupants, nextOccupantRefresh;
 
         public static void Reset()
         {
@@ -90,6 +93,8 @@ namespace BadNorthMP.Net
             nextEvac = 0f;
             sentAbilities = "";
             nextAbilities = nextAbilityRefresh = 0f;
+            sentOccupants = "";
+            nextOccupants = nextOccupantRefresh = 0f;
         }
 
         // ---- Things appearing ----------------------------------------------------------------
@@ -324,6 +329,24 @@ namespace BadNorthMP.Net
             SendSquadTiles();
             SendSquadEvac();
             SendSquadAbilities();
+            SendHouseOccupants();
+        }
+
+        /// <summary>Whose squad is in (or heading into) each house, for everyone's house labels and teammates' healing orders.</summary>
+        private static void SendHouseOccupants()
+        {
+            if (Time.unscaledTime < nextOccupants || Profile.campaign == null)
+                return;
+            nextOccupants = Time.unscaledTime + 0.25f;
+            Dictionary<int, HouseOccupants.Entry> occupants = HouseOccupants.Read(GameAccess.CurrentIsland);
+            string sent = HouseOccupants.Key(occupants);
+            bool refresh = Time.unscaledTime >= nextOccupantRefresh;
+            if (sent == sentOccupants && !refresh)
+                return;
+            sentOccupants = sent;
+            nextOccupantRefresh = Time.unscaledTime + 2f;
+            // Unreliable like the abilities: the refresh repairs a lost one, and it isn't kept for late joiners.
+            BattleStream.Send(Packet.Build(MsgType.HouseOccupants, w => HouseOccupants.Write(w, occupants)), reliable: false);
         }
 
         /// <summary>

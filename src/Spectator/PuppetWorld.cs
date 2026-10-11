@@ -181,6 +181,7 @@ namespace BadNorthMP.Spectator
                         case MsgType.SquadTiles: Net.NativeDefenderControls.ApplyTiles(r); break;
                         case MsgType.SquadEvac: Net.NativeDefenderControls.ApplyEvac(r); break;
                         case MsgType.SquadAbilities: Net.SquadAbilityMirror.Apply(r); break;
+                        case MsgType.HouseOccupants: Net.HouseOccupants.Apply(r); break;
                         case MsgType.CommanderSquads:
                             commanderSquads.Clear();
                             for (int count = r.ReadByte(), i = 0; i < count; i++)

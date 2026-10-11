@@ -7,7 +7,9 @@ Up to four defenders play one shared campaign together, each commanding their ow
 - they spend a war chest on Viking upgrades;
 - they recruit Viking commanders that they deploy and order around in battle.
 
-Everything runs over Steam lobbies and invites. Each player sees the battle live in their own game.
+Everything runs over Steam lobbies and invites. Each player sees the battle live in their own game. Defenders can ping the island for each other: hold the middle mouse button and pick Attack, Move here, Fall back or Hold.
+
+Found a bug? Pause the game, press **Copy log**, and paste it into your report.
 
 ## Install
 1. Download `BadNorthMP.zip` from the [latest release](https://github.com/BananaSplit101/BadNorthMastermind/releases/latest).
