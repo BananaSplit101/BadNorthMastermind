@@ -13,7 +13,7 @@ namespace BadNorthMP.Patches
         private static bool Prefix()
         {
             if (Spectator.SpectatorSession.Active) return true;
-            if (RestartRules.Refuse("restart")) return false;
+            if (RestartRules.Refuse("restart") || RetryLimit.Refuse("retry")) return false;
             Net.BattleStream.End();
             Economy.Restart();
             CustomWaves.Reset();
@@ -31,7 +31,41 @@ namespace BadNorthMP.Patches
             if (Spectator.SpectatorSession.Active) return true;
             var manager = Singleton<IslandGameplayManager>.instance;
             if (manager && manager.states.loadout.active) return true;
-            return !RestartRules.Refuse("leave mid-fight");
+            // Back to the map and in again is a fresh go at the island too: it counts as a retry.
+            return !RestartRules.Refuse("leave mid-fight") && !RetryLimit.Refuse("leave mid-fight");
+        }
+    }
+
+    /// <summary>
+    /// A party gets three retries on an island: the fourth is refused and the fight has to be won or lost. Leaving for the
+    /// map mid-fight (which keeps the island open to come back to) counts as one. The count starts again on the next
+    /// island. Single player keeps the game's own rule.
+    /// </summary>
+    internal static class RetryLimit
+    {
+        public const int MaxRetries = 3;
+        private static string island = "";
+        private static int used;
+
+        public static bool Refuse(string what)
+        {
+            Island current = GameAccess.CurrentIsland;
+            if (!Net.PartyFlow.Deployed || !current || !current.levelNode || Profile.campaign == null) return false;
+            string key = Profile.campaign.seed + ":" + current.levelNode.index;
+            if (key != island) { island = key; used = 0; }
+            if (used >= MaxRetries)
+            {
+                ModLog.Info($"Refused to {what}: all retries on island {current.levelNode.index} are used");
+                FabricWrapper.PostEvent(FabricID.uiError);
+                UI.GameNotify.Post("No retries left on this island: fight it out", 3f);
+                return true;
+            }
+            used++;
+            ModLog.Info($"Island {current.levelNode.index}: retry {used} of {MaxRetries} ({what})");
+            Net.MultiplayerGame.Instance.Announce(used < MaxRetries
+                ? $"Retry {used} of {MaxRetries} on this island"
+                : "Last retry on this island: next time it has to be fought out");
+            return false;
         }
     }
 

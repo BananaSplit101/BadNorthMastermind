@@ -10,21 +10,21 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// Before an island starts (DeployFlow): each defender clicks which of their commanders go (their portraits, the
-    /// picked ones highlighted) and presses Ready; everyone sees who's still choosing. The mastermind, and anyone
-    /// without squads to choose, only see that.
+    /// Before an island starts (DeployFlow): each defender picks which of their commanders go and presses Ready (in the
+    /// game's own loadout screen, or this panel's cards if that isn't there). Everyone else (the mastermind, a defender
+    /// already ready, one sitting the island out) sees each defender's picks so far: their portraits, and who's ready.
     /// </summary>
     internal class DeployPanel : MonoBehaviour
     {
-        private const float PortraitSize = 96f;
+        private const float PortraitSize = 96f, PickSize = 64f;
         private static readonly Color PickedColor = new Color(1f, 0.83f, 0.42f, 1f);
 
         private GameObject canvasObject;
         private Text title, status, readyLabel;
-        private Transform cards;
+        private Transform cards, overview;
         private Button ready;
         private readonly Dictionary<int, Image> cardImages = new Dictionary<int, Image>();
-        private string signature = "";
+        private string signature = "", overviewSignature = "";
 
         private void Update()
         {
@@ -35,7 +35,7 @@ namespace BadNorthMP.UI
                 return;
             }
             if (!canvasObject) Build();
-            if (!canvasObject.activeSelf) { canvasObject.SetActive(true); signature = ""; }
+            if (!canvasObject.activeSelf) { canvasObject.SetActive(true); signature = overviewSignature = null; }
             Refresh();
         }
 
@@ -65,8 +65,10 @@ namespace BadNorthMP.UI
                 for (int i = cards.childCount - 1; i >= 0; i--) Destroy(cards.GetChild(i).gameObject);
                 cardImages.Clear();
                 if (cardsShown) foreach (int id in mine.candidates) if (id < heroes.Count) Card(id, heroes[id]);
-                cards.gameObject.SetActive(cardsShown);
             }
+            // An empty row would still hold its space (it did: a blank gap on the mastermind's panel).
+            if (cards.gameObject.activeSelf != cardsShown) cards.gameObject.SetActive(cardsShown);
+            Overview(plan, heroes, !cardsShown);
             if (cardsShown)
                 foreach (var card in cardImages) card.Value.color = mine.picks.Contains(card.Key) ? PickedColor : GameStyle.ButtonColor;
 
@@ -78,16 +80,75 @@ namespace BadNorthMP.UI
                 readyLabel.text = native ? "Change commanders" : mine.ready ? "Not ready" : "Ready";
             }
 
+            // Who's still choosing: in the overview when it's up, else on this line.
             var line = new StringBuilder();
-            foreach (DeploySeat seat in plan.seats)
-            {
-                if (!seat.Choosing) continue;
-                if (line.Length > 0) line.Append("     ");
-                line.Append(SteamSession.NameOf(new CSteamID(seat.player))).Append(seat.ready ? ": ready" : ": choosing...");
-            }
+            if (cardsShown)
+                foreach (DeploySeat seat in plan.seats)
+                {
+                    if (!seat.Choosing) continue;
+                    if (line.Length > 0) line.Append("     ");
+                    line.Append(SteamSession.NameOf(new CSteamID(seat.player))).Append(seat.ready ? ": ready" : ": choosing...");
+                }
             if (plan.secondsLeft < 60f)
-                line.Append($"\n<size=16>Landing in {Mathf.CeilToInt(plan.secondsLeft)} s, ready or not</size>");
+                line.Append(line.Length > 0 ? "\n" : "").Append($"<size=16>Landing in {Mathf.CeilToInt(plan.secondsLeft)} s, ready or not</size>");
             status.text = line.ToString();
+            if (status.gameObject.activeSelf != (line.Length > 0)) status.gameObject.SetActive(line.Length > 0);
+        }
+
+        /// <summary>Each choosing defender's name, ready or not, and the portraits of the commanders they've picked so far.</summary>
+        private void Overview(PartyDeployment plan, List<HeroDefinition> heroes, bool shown)
+        {
+            var key = new StringBuilder();
+            if (shown && heroes != null)
+            {
+                key.Append(plan.token);
+                foreach (DeploySeat seat in plan.seats)
+                    if (seat.Choosing)
+                        key.Append('|').Append(seat.player).Append(seat.ready ? '+' : '-').Append(string.Join(",", seat.picks.ConvertAll(id => id.ToString()).ToArray()));
+                key.Append('|').Append(plan.rescueHero).Append('@').Append(plan.rescueOwner);
+            }
+            string built = key.ToString();
+            if (built == overviewSignature) return;
+            overviewSignature = built;
+            for (int i = overview.childCount - 1; i >= 0; i--) Destroy(overview.GetChild(i).gameObject);
+            bool any = false;
+            if (built.Length > 0)
+                foreach (DeploySeat seat in plan.seats)
+                {
+                    if (!seat.Choosing) continue;
+                    any = true;
+                    var picked = new List<int>(seat.picks);
+                    if (plan.rescueHero >= 0 && plan.rescueOwner == seat.player && !picked.Contains(plan.rescueHero)) picked.Add(plan.rescueHero);
+                    Group(seat, picked, heroes);
+                }
+            if (overview.gameObject.activeSelf != any) overview.gameObject.SetActive(any);
+        }
+
+        private void Group(DeploySeat seat, List<int> picked, List<HeroDefinition> heroes)
+        {
+            var group = new GameObject("Defender", typeof(RectTransform));
+            group.transform.SetParent(overview, false);
+            var layout = group.AddComponent<VerticalLayoutGroup>();
+            layout.spacing = 4f;
+            layout.childAlignment = TextAnchor.UpperCenter;
+            layout.childControlHeight = layout.childControlWidth = true;
+            layout.childForceExpandHeight = layout.childForceExpandWidth = false;
+            string name = SteamSession.NameOf(new CSteamID(seat.player));
+            GameStyle.Label(group.transform, name + (seat.ready ? " · ready" : " · choosing..."), 18);
+            Transform row = GameStyle.Row(group.transform, PickSize, 6f);
+            int shown = 0;
+            foreach (int id in picked)
+            {
+                if (id < 0 || id >= heroes.Count) continue;
+                var holder = new GameObject("Portrait", typeof(RectTransform));
+                holder.transform.SetParent(row, false);
+                var size = holder.AddComponent<LayoutElement>();
+                size.minWidth = size.preferredWidth = size.minHeight = size.preferredHeight = PickSize;
+                try { GameUi.Portrait(holder.transform, heroes[id], PickSize); }
+                catch (Exception e) { ModLog.Warn("Commander portrait unavailable: " + e.Message); }
+                shown++;
+            }
+            if (shown == 0) GameStyle.Label(row, "no commanders picked yet", 15);
         }
 
         private static string Name(int hero)
@@ -135,6 +196,7 @@ namespace BadNorthMP.UI
             panel.anchoredPosition = new Vector2(0f, -110f);
             title = GameStyle.Label(panel, "", 26);
             cards = GameStyle.Row(panel, 160f, 12f);
+            overview = GameStyle.Row(panel, PickSize + 28f, 28f);
             status = GameStyle.Label(panel, "", 18);
             ready = GameStyle.Button(panel, "Ready", () => DeployFlow.SetReady(!(DeployFlow.Mine != null && DeployFlow.Mine.ready)), 220f);
             readyLabel = ready.GetComponentInChildren<Text>();
