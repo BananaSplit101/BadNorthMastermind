@@ -15,7 +15,7 @@ namespace BadNorthMP.Game
         public const float CarryToNextWave = 0.5f;
 
         /// <summary>Each defender beyond the first adds this share to the Vikings (the leader's config can change it).</summary>
-        public const float DefaultPerExtraDefender = 0.25f;
+        public const float DefaultPerExtraDefender = 0.1f;
 
         /// <summary>How much stronger the Vikings get for a party of this many defenders: wave budgets and the island payout.</summary>
         public static float PartyScale(int defenders, float perExtraDefender) =>

@@ -355,6 +355,16 @@ namespace BadNorthMP.Game
                 states.EndOfLevel.active = true; Economy.Tick(1f);
                 Assert(Math.Abs(Economy.SecondsToDeparture - (opening - 2f)) < 0.01f && !Economy.FightOn, "the end screen stops the timer");
                 states.running.active = true; states.EndOfLevel.active = false;
+                // A retry: the island stays "playing" while it reloads. The waves wait for the reloaded island (whose
+                // running state is off until the party lands), not start again on the old one with its fight still on.
+                Economy.Tick(1f); Economy.Restart();
+                Net.MastermindNet.Update(); Economy.Tick(30f);
+                Assert(!Economy.Active && !Economy.FightOn && CustomWaves.SentCount == 0, "a retry doesn't restart the waves on the island it's leaving");
+                states.running.active = false; Economy.Begin(island);
+                Net.MastermindNet.Update(); Economy.Tick(30f);
+                Assert(Economy.Active && !Economy.FightOn && Economy.WaveIndex == 0 && CustomWaves.SentCount == 0, "after a retry the timer waits for the party to land");
+                states.running.active = true; Economy.Tick(1f);
+                Assert(Economy.FightOn && Math.Abs(Economy.SecondsToDeparture - (opening - 1f)) < 0.01f, "the retried fight's timer starts from the top");
                 Plan(4, 0);
                 Assert(Economy.Plan.Count == 1 && Economy.WaveIndex == 0, "a plan never sails early");
                 Sail();

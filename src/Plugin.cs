@@ -11,11 +11,12 @@ namespace BadNorthMP
     {
         public const string Id = "com.bananasplit.badnorthmp";
         public const string Name = "Bad North Multiplayer";
-        public const string Version = "1.0.7";
+        public const string Version = "1.0.8";
 
         private void Awake()
         {
             ModLog.Init(Logger);
+            GameErrors.Capture();
             ModConfig.Bind(Config);
 
             // GMW's traits first: saves and shared campaigns name their traits, so the game must know them before loading any.

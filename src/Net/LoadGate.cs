@@ -367,7 +367,19 @@ namespace BadNorthMP.Net
 
         private static IEnumerator<GenInfo> Gated(IEnumerator<GenInfo> original)
         {
-            while (original.MoveNext()) yield return original.Current;
+            while (true)
+            {
+                bool more;
+                try { more = original.MoveNext(); }
+                catch (System.Exception e)
+                {
+                    // The loading screen stops for good on this (the game's own behaviour): say why in the mod's log.
+                    ModLog.Error($"The island stopped loading: {e.GetType().Name}: {e.Message}");
+                    throw;
+                }
+                if (!more) break;
+                yield return original.Current;
+            }
             // One step per frame while waiting (forceInterrupt hands the frame back to the loading screen).
             while (LoadGate.Holding) yield return new GenInfo("Waiting for players to load", GenInfo.Mode.forceInterrupt);
         }

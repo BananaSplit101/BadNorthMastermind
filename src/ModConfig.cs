@@ -33,9 +33,13 @@ namespace BadNorthMP
                 "How many squads the party brings to an island (the game's own limit is 4); the rest of the commanders stay " +
                 "in reserve. An island's rescued commander counts as one. Used by the campaign leader.",
                 new AcceptableValueRange<int>(1, 10)));
-            PerExtraDefender = config.Bind("Party", "Vikings per extra defender", Game.EconomyConfig.DefaultPerExtraDefender, new ConfigDescription(
+            // 1.0.7's key holds its old 0.25 in everyone's file: drop it, so the gentler default below takes over.
+            var oldPerExtraDefender = new ConfigDefinition("Party", "Vikings per extra defender");
+            config.Bind(oldPerExtraDefender, 0f);
+            config.Remove(oldPerExtraDefender);
+            PerExtraDefender = config.Bind("Party", "Viking strength per extra defender", Game.EconomyConfig.DefaultPerExtraDefender, new ConfigDescription(
                 "How much stronger the Vikings get for each defender beyond the first: every wave's budget and the mastermind's " +
-                "island payout grow by this share (0.25: two defenders 1.25x, three 1.5x, four 1.75x). Used by the campaign leader.",
+                "island payout grow by this share (0.1: two defenders 1.1x, three 1.2x, four 1.3x; 0 turns it off). Used by the campaign leader.",
                 new AcceptableValueRange<float>(0f, 1f)));
             HideEnemyLineup = config.Bind("Interface", "Hide enemy lineup", true,
                 "In multiplayer, defenders don't see which Vikings are coming (map, island intro and results). The mastermind always does.");

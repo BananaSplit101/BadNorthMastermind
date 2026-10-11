@@ -38,6 +38,7 @@ namespace BadNorthMP.UI
             {
                 if (Showing && manager && manager.states.loadout.active) Close(manager);
                 Showing = false;
+                Restore();
                 if (!DeployFlow.Choosing) { configuredToken = -1; Unavailable = false; }
                 return;
             }
@@ -81,6 +82,64 @@ namespace BadNorthMP.UI
             }
             if (manager && manager.states.loadout.active) manager.states.loadout.SetActive(false);
             Showing = false;
+            Restore();
+        }
+
+        // ---- The game's own setup, kept to put back --------------------------------------------------------------
+        // The game sets each island's loadout up from its banners and slot count; a rescue island puts its commander
+        // in the last slot and fills the slots before it. Left at one player's share (one slot, say), the next rescue
+        // island had no slot before the last and ran off the end of the banners, which stopped the island loading.
+
+        private static LoadoutUI nativeFor;
+        private static LoadoutUIListBanner[] nativeBanners;
+        private static int nativeSlots;
+        private static Vector3 nativeScale;
+        private static RectTransform nativeList;
+        private static readonly List<Transform> nativeOrder = new List<Transform>();
+        private static readonly List<bool> nativeActive = new List<bool>();
+        private static bool changed;
+
+        private static void Remember(LoadoutUI loadout, Traverse ui, Transform list, RectTransform listRect)
+        {
+            if (nativeFor == loadout) return;
+            nativeFor = loadout;
+            nativeBanners = ui.Field<LoadoutUIListBanner[]>("heroBanners").Value;
+            nativeSlots = ui.Field<int>("maxSlots").Value;
+            nativeList = listRect;
+            nativeScale = listRect ? listRect.localScale : Vector3.one;
+            nativeOrder.Clear();
+            nativeActive.Clear();
+            foreach (Transform child in list)
+            {
+                nativeOrder.Add(child);
+                nativeActive.Add(child.gameObject.activeSelf);
+            }
+        }
+
+        /// <summary>The game's banners, slot count, order and size again (the party's copies of the banner hidden).</summary>
+        internal static void Restore()
+        {
+            if (!changed) return;
+            changed = false;
+            if (!nativeFor || nativeBanners == null || nativeBanners.Length == 0 || !nativeBanners[0]) return;
+            var ui = Traverse.Create(nativeFor);
+            ui.Field("heroBanners").SetValue(nativeBanners);
+            ui.Field("maxSlots").SetValue(nativeSlots);
+            Transform list = nativeBanners[0].transform.parent;
+            var copies = new List<Transform>();
+            foreach (Transform child in list) if (!nativeOrder.Contains(child)) copies.Add(child);
+            for (int i = 0; i < nativeOrder.Count; i++)
+            {
+                if (!nativeOrder[i]) continue;
+                nativeOrder[i].SetAsLastSibling();
+                nativeOrder[i].gameObject.SetActive(nativeActive[i]);
+            }
+            foreach (Transform copy in copies)
+            {
+                copy.SetAsLastSibling();
+                copy.gameObject.SetActive(false);
+            }
+            if (nativeList) nativeList.localScale = nativeScale;
         }
 
         // ---- Setting the screen up for this player ----------------------------------------------------------------
@@ -96,6 +155,10 @@ namespace BadNorthMP.UI
             LoadoutUIListBanner[] current = ui.Field<LoadoutUIListBanner[]>("heroBanners").Value;
             if (current == null || current.Length == 0) throw new InvalidOperationException("no commander banners");
             Transform list = current[0].transform.parent;
+            var listRect = ui.Field<RectTransform>("listTransform").Value;
+            if (!listRect) listRect = list as RectTransform;
+            Remember(loadout, ui, list, listRect);
+            changed = true;
             var all = new List<LoadoutUIListBanner>();
             foreach (Transform child in list)
             {
@@ -145,12 +208,10 @@ namespace BadNorthMP.UI
             for (int i = slots; i < all.Count; i++) all[i].transform.SetAsLastSibling();
 
             // More than six banners: a little smaller, so they still fit.
-            var listRect = ui.Field<RectTransform>("listTransform").Value;
-            if (!listRect) listRect = list as RectTransform;
             if (listRect)
             {
                 float scale = slots > 6 ? Mathf.Clamp(1.3f - slots * 0.06f, 0.2f, 1f) : 1f;
-                listRect.localScale = new Vector3(scale, scale, 1f);
+                listRect.localScale = new Vector3(scale * nativeScale.x, scale * nativeScale.y, nativeScale.z);
             }
         }
 
@@ -168,6 +229,16 @@ namespace BadNorthMP.UI
             }
             return picks;
         }
+    }
+
+    /// <summary>Each island's loadout is set up from the game's own banners and slots, whatever the last party choice left.</summary>
+    [HarmonyPatch]
+    internal static class PartyLoadoutSetupPatch
+    {
+        private static MethodBase TargetMethod() =>
+            AccessTools.Method(typeof(LoadoutUI), "Voxels.TowerDefense.IslandGameplayManager.ISetupIsland.OnSetup");
+
+        private static void Prefix() => NativeLoadout.Restore();
     }
 
     /// <summary>In the party's choice, Deploy means "ready": the leader lands everyone once all are.</summary>

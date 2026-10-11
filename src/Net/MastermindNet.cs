@@ -227,7 +227,7 @@ namespace BadNorthMP.Net
                 return;
             MastermindUpgradeSave.EnsureCampaign();
             Island current = GameAccess.CurrentIsland;
-            if (!Economy.Active && CustomWaves.MastermindMode && current && current.state == Island.State.Playing)
+            if (!Economy.Active && !Economy.ReplayPending && CustomWaves.MastermindMode && current && current.state == Island.State.Playing)
             {
                 current.raid.StopAllCoroutines();
                 CustomWaves.ReplaceRaid(current.raid);

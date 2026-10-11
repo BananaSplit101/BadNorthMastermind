@@ -90,6 +90,7 @@ namespace BadNorthMP.Game
 
         public static void End()
         {
+            ReplayPending = false;
             if (!Active)
                 return;
             if (island && island.village)
@@ -122,8 +123,18 @@ namespace BadNorthMP.Game
             DeployedCommanders.Clear();
             Active = false;
             GaveUp = false;
+            Started = false;
             island = null;
+            ReplayPending = true;
         }
+
+        /// <summary>
+        /// A retry is reloading the island: its waves begin again as it plays (MastermindRaidPatch, through Begin). The
+        /// island stays "playing" through the reload, so without this the leader's catch-up (MastermindNet.Update) began
+        /// them on the old island first, with its fight still running: the timer counted on through the reload and the
+        /// party's choice of commanders, and the waves sailed before anyone had landed.
+        /// </summary>
+        public static bool ReplayPending { get; private set; }
 
         /// <summary>The game called the first wave on this island (its running state came on).</summary>
         public static bool Started { get; private set; }
