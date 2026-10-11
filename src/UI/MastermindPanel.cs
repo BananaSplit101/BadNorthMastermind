@@ -797,7 +797,26 @@ namespace BadNorthMP.UI
             int index = cards.IndexOf(card);
             int step = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? 5 : 1;
             int before = counts[index];
-            if (button == PointerEventData.InputButton.Left) counts[index] = Mathf.Min(99, before + step);
+            if (button == PointerEventData.InputButton.Left)
+            {
+                // Only what this wave's gold still pays for: the leader refuses a whole plan that costs more, and the
+                // wave would sail without it (the button only looked greyed out, it still added).
+                MasterState s = MastermindNet.State;
+                if (MastermindNet.HasFreshState && s.inBattle)
+                {
+                    int unit = Economy.UnitCost(card.type);
+                    float left = s.waveBudget - Cost();
+                    int fits = unit > 0 ? Mathf.FloorToInt((left + 0.001f) / unit) : step;
+                    if (fits <= 0)
+                    {
+                        FabricWrapper.PostEvent("UI/InGame/Error");
+                        GameNotify.Post($"Not enough gold left in this wave: {Name((int)card.type.type)} costs {unit}, {Mathf.Max(0, Mathf.FloorToInt(left + 0.001f))} left", 2.5f);
+                        return;
+                    }
+                    step = Mathf.Min(step, fits);
+                }
+                counts[index] = Mathf.Min(99, before + step);
+            }
             else if (button == PointerEventData.InputButton.Right) counts[index] = Mathf.Max(0, before - step);
             if (counts[index] == before) return;
             FabricWrapper.PostEvent(counts[index] > before ? "UI/InGame/TapRight" : "UI/InGame/TapLeft");

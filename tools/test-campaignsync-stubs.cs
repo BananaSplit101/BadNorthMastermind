@@ -355,6 +355,20 @@ namespace BadNorthMP.Net
             Deliver(Part(5, 0, 1, Info(600).ToBytes())); Tick();
             Check(Profile.campaign.seed == 500, "map update interrupted live battle");
             watcher.BattleEnded(); Complete(); Check(SpectatorSession.ViewingCampaign && Profile.campaign.seed == 600, "post-battle progress missing");
+            // A battle that ends with nothing newer in hand waits for the leader's new map, instead of loading the map as it
+            // was and then the new one on top of it.
+            watcher.Watch(Info(610, 1)); Complete(); Check(SpectatorSession.IslandReady() && Profile.campaign.seed == 610, "battle after the map not loaded");
+            Flow.Clear(); watcher.BattleEnded(); Complete(); Complete();
+            Check(!SpectatorSession.ViewingCampaign && !Flow.Contains("generate"), "the old map loaded while the leader's new one was on its way");
+            watcher.ViewCampaign(Info(620)); Complete();
+            Check(SpectatorSession.ViewingCampaign && Profile.campaign.seed == 620 && Flow.FindAll(step => step == "generate").Count == 1, "the leader's new map didn't load once");
+            // A retried battle loads straight from the one that ended, without a map in between.
+            watcher.Watch(Info(630, 1)); Complete();
+            Flow.Clear(); watcher.BattleEnded(); Tick(); watcher.Watch(Info(640, 1)); Complete();
+            Check(SpectatorSession.IslandReady() && Profile.campaign.seed == 640 && Flow.FindAll(step => step == "generate").Count == 1, "a retry loaded the map before the battle");
+            // With nothing coming at all, the map as it was comes back after a while.
+            watcher.BattleEnded(); for (int i = 0; i < 15; i++) Tick(); Complete();
+            Check(SpectatorSession.ViewingCampaign, "the map never came back after a battle");
             watcher.Watch(Info(650, 1)); Complete();
             FailLeave = true; watcher.Watch(Info(660, 2)); Complete(); FailLeave = false;
             Check(SpectatorSession.Active && !Object.ReferenceEquals(originalHandler, HarmonyLib.Traverse.Value), "native leave failure released save handler with live island");
@@ -411,14 +425,25 @@ namespace BadNorthMP.Net
             SteamSession.Instance.Sent.Clear(); Tick();
             Check(SteamSession.Instance.Sent.Count == 1, "initial defender snapshot not sent");
             SteamSession.Instance.Sent.Clear(); Tick(); Check(SteamSession.Instance.Sent.Count == 0, "unchanged map resent");
-            CampaignSync.MarkDirty(); Tick(); Check(SteamSession.Instance.Sent.Count == 1, "dirty save not synchronized");
+            // A burst of saves (the end of an island) goes out as one snapshot, once the campaign has been still a moment:
+            // every snapshot makes every viewer reload their map.
+            Profile.campaign.seed = 1001; CampaignSync.MarkDirty(); Tick(); Check(SteamSession.Instance.Sent.Count == 0, "snapshot sent while the campaign was still changing");
+            Profile.campaign.seed = 1002; CampaignSync.MarkDirty(); Tick(); Check(SteamSession.Instance.Sent.Count == 0, "a burst of saves wasn't held back");
+            Tick(); Check(SteamSession.Instance.Sent.Count == 1, "dirty save not synchronized");
             int previous; using (var r = new BinaryReader(new MemoryStream(SteamSession.Instance.Sent[0]))) { r.ReadByte(); previous = r.ReadInt32(); }
-            CampaignSync.MarkDirty(); SteamSession.Instance.Sent.Clear(); Tick();
+            Profile.campaign.seed = 1003; CampaignSync.MarkDirty(); SteamSession.Instance.Sent.Clear(); Tick(); Tick();
             using (var r = new BinaryReader(new MemoryStream(SteamSession.Instance.Sent[0]))) { r.ReadByte(); Check(r.ReadInt32() > previous, "revision failed to increment"); }
+            // A save that changed nothing (the map reopening after a menu) reloads nobody's map.
+            CampaignSync.MarkDirty(); SteamSession.Instance.Sent.Clear(); Tick(); Tick(); Check(SteamSession.Instance.Sent.Count == 0, "unchanged save resent");
+            // A campaign that keeps changing still goes out within a few seconds.
+            SteamSession.Instance.Sent.Clear();
+            for (int i = 0; i < 7; i++) { Profile.campaign.seed = 1100 + i; CampaignSync.MarkDirty(); Tick(); }
+            Check(SteamSession.Instance.Sent.Count == 1, "a busy campaign was never sent: " + SteamSession.Instance.Sent.Count);
+            Tick(); Tick();
             SteamSession.Instance.members.Add(new CSteamID(3)); SteamSession.Instance.Sent.Clear(); Tick();
             Check(SteamSession.Instance.Sent.Count == 1, "late join snapshot not delivered");
-            BattleStream.Active = true; CampaignSync.MarkDirty(); SteamSession.Instance.Sent.Clear(); Tick(); Check(SteamSession.Instance.Sent.Count == 0, "campaign replaced battle stream");
-            BattleStream.Active = false; Tick(); Check(SteamSession.Instance.Sent.Count == 2, "deferred dirty map not sent after battle");
+            BattleStream.Active = true; Profile.campaign.seed = 1200; CampaignSync.MarkDirty(); SteamSession.Instance.Sent.Clear(); Tick(); Check(SteamSession.Instance.Sent.Count == 0, "campaign replaced battle stream");
+            BattleStream.Active = false; Tick(); Tick(); Check(SteamSession.Instance.Sent.Count == 2, "deferred dirty map not sent after battle");
             // Broadcast upgrades: a quiet save refreshes the snapshot for late joiners only; a refused one resends to one player.
             SteamSession.Instance.Sent.Clear(); CampaignSync.MarkQuiet(); Tick(); Check(SteamSession.Instance.Sent.Count == 0, "quiet upgrade save reloaded current viewers");
             SteamSession.Instance.members.Add(new CSteamID(4)); SteamSession.Instance.Sent.Clear(); Tick(); Check(SteamSession.Instance.Sent.Count == 1, "late joiner missed the quietly refreshed campaign");

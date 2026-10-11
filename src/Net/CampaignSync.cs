@@ -61,16 +61,44 @@ namespace BadNorthMP.Net
             });
         }
 
-        public static void MarkDirty() => dirty = true;
+        // Changes come in bursts (the end of an island saves, the map opens, the menu reopens, ...), and every snapshot
+        // sent makes every viewer reload their map: the leader waits until the campaign has been still for Settle
+        // seconds (on the map for that long too), at most MaxSettle seconds from the first change, and sends that once.
+        private const float Settle = 1.5f, MaxSettle = 6f;
+        private static float changedAt, firstChangeAt = -1f, mapSince = -1f;
+
+        private static void Changed()
+        {
+            changedAt = Time.unscaledTime;
+            if (firstChangeAt < 0f) firstChangeAt = changedAt;
+        }
+
+        public static void MarkDirty() { dirty = true; Changed(); }
 
         /// <summary>
         /// The campaign changed in a way every viewer already applied (a broadcast upgrade). Refresh the snapshot
         /// for players who join later, without making current viewers reload their map.
         /// </summary>
-        public static void MarkQuiet() => quiet = true;
+        public static void MarkQuiet() { quiet = true; Changed(); }
 
         /// <summary>Send one viewer the current campaign again, e.g. after their local upgrade was refused.</summary>
         public static void Resend(CSteamID member) { quiet = true; resendTo.Add(member); }
+
+        /// <summary>The leader has more changes on the way: hold the snapshot back a moment (see Settle).</summary>
+        private static bool Settling()
+        {
+            if (snapshot == null || (!dirty && !quiet) || firstChangeAt < 0f) return false;
+            float now = Time.unscaledTime;
+            if (now - firstChangeAt >= MaxSettle) return false;
+            return now - changedAt < Settle || now - mapSince < Settle;
+        }
+
+        private static bool Same(byte[] a, byte[] b)
+        {
+            if (a == null || b == null || a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
+            return true;
+        }
 
         /// <summary>True while a save should only refresh the snapshot quietly (see MarkQuiet).</summary>
         public static bool QuietSave;
@@ -101,6 +129,7 @@ namespace BadNorthMP.Net
             {
                 observedCampaign = campaign;
                 dirty = true;
+                Changed();
             }
             var members = session.Members();
             sentTo.RemoveWhere(member => !members.Contains(member) || !Updater.IsCompatible(member));
@@ -118,19 +147,29 @@ namespace BadNorthMP.Net
                         session.Send(member, Packet.Build(CampaignClosed, w => w.Write(revision)));
                 return;
             }
-            if (!stack.stateCampaign.gameObject.activeInHierarchy) return;
+            if (!stack.stateCampaign.gameObject.activeInHierarchy) { mapSince = -1f; return; }
+            if (mapSince < 0f) mapSince = Time.unscaledTime;
+            if (Settling()) return;
             if (dirty || quiet || snapshot == null)
             {
                 try
                 {
-                    snapshot = BattleInfo.Capture(-1).ToBytes();
-                    if (snapshot.Length > MaxPayload) throw new InvalidOperationException("Campaign snapshot exceeds 16 MiB");
-                    ++revision;
-                    // A quiet refresh only goes to players who don't have the change yet.
-                    if (dirty || !quiet) { sentTo.Clear(); LoudRevision = revision; }
-                    else foreach (var member in resendTo) sentTo.Remove(member);
+                    byte[] captured = BattleInfo.Capture(-1).ToBytes();
+                    if (captured.Length > MaxPayload) throw new InvalidOperationException("Campaign snapshot exceeds 16 MiB");
+                    // Nothing actually changed (the map reopening after a menu, a save of the same state): no reload for anyone.
+                    if (Same(captured, snapshot))
+                        foreach (var member in resendTo) sentTo.Remove(member);
+                    else
+                    {
+                        snapshot = captured;
+                        ++revision;
+                        // A quiet refresh only goes to players who don't have the change yet.
+                        if (dirty || !quiet) { sentTo.Clear(); LoudRevision = revision; }
+                        else foreach (var member in resendTo) sentTo.Remove(member);
+                    }
                     resendTo.Clear();
                     dirty = quiet = false;
+                    firstChangeAt = -1f;
                 }
                 catch (Exception e)
                 {

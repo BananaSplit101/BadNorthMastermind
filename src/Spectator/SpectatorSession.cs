@@ -33,6 +33,10 @@ namespace BadNorthMP.Spectator
         private bool transitioning;
         private bool onBattle;
         private bool returnToMap;
+        // After a battle: wait this long for what comes next (the leader's new map, or a retried battle) before loading
+        // the map as it was, which the new one would replace straight away.
+        private const float AfterBattleWait = 15f;
+        private float afterBattleUntil;
         private BattleInfo latestMap;
         private BattleInfo pendingMap;
         private bool protectedProfile;
@@ -109,7 +113,8 @@ namespace BadNorthMP.Spectator
             if (Roles.WatchesBattle)
             {
                 returnToMap = Active;
-                pendingMap = latestMap;
+                // A newer map that came in during the battle loads now; otherwise the leader's is on its way.
+                afterBattleUntil = pendingMap != null ? 0f : Time.unscaledTime + AfterBattleWait;
             }
             else
                 Stop();
@@ -193,6 +198,8 @@ namespace BadNorthMP.Spectator
 
             if ((pendingMap != null || returnToMap) && (!Active ? AtMainMenu() : !onBattle || returnToMap))
             {
+                // The battle ended: the leader's new map (or the retried battle) is on its way.
+                if (pendingMap == null && returnToMap && Time.unscaledTime < afterBattleUntil) return;
                 BattleInfo map = pendingMap ?? latestMap;
                 pendingMap = null;
                 returnToMap = false;
@@ -391,7 +398,8 @@ namespace BadNorthMP.Spectator
             if (save == null) yield break;
             Profile.campaign = save;
             Profile.activeCampaignMeta = save;
-            ModLog.Info($"Spectator: loading campaign 0x{save.seed:X8}");
+            // The memory in use, to see in a long session's log whether loads leave things behind.
+            ModLog.Info($"Spectator: loading campaign 0x{save.seed:X8} ({GC.GetTotalMemory(false) / (1024 * 1024)} MB in use)");
             IEnumerator generate = CampaignManager.GenerateCampaign(save, campaignIsNew: false);
             while (generate.MoveNext()) yield return null;
         }

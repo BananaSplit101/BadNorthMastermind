@@ -303,7 +303,8 @@ namespace BadNorthMP.Net
             if (!blocking)
             {
                 if (blockedSince >= 0f && Time.unscaledTime - blockedSince >= 1f)
-                    ModLog.Info($"Waited {Time.unscaledTime - blockedSince:0.0} s for everyone to load the {(blockedOnIsland ? "island" : "map")}");
+                    ModLog.Info($"Waited {Time.unscaledTime - blockedSince:0.0} s for everyone to load the {(blockedOnIsland ? "island" : "map")} " +
+                        $"({System.GC.GetTotalMemory(false) / (1024 * 1024)} MB in use)");
                 blockedSince = -1f;
                 if (overlay && overlay.activeSelf) overlay.SetActive(false);
                 return;

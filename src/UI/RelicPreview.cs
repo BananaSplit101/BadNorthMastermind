@@ -48,9 +48,13 @@ namespace BadNorthMP.UI
         /// <summary>The relic drawn like the game's own relic icons (MaskedSprite: cropped to the item shape, with its border).</summary>
         private static void Show(RectTransform hexagon, HeroUpgradeDefinition relic)
         {
+            // Set up again (the map reloading the same island): replace the picture rather than stack another.
+            for (int i = hexagon.childCount - 1; i >= 0; i--)
+                if (hexagon.GetChild(i).name == IconName) UnityEngine.Object.Destroy(hexagon.GetChild(i).gameObject);
             MaskedSprite template = Template();
             if (!template) { Plain(hexagon, relic.GetSprite()); return; }
             var icon = NativeWidgets.GraphicsCopy(template.gameObject, null).GetComponent<MaskedSprite>();
+            icon.name = IconName;
             foreach (var text in icon.GetComponentsInChildren<Text>(true)) UnityEngine.Object.DestroyImmediate(text.gameObject);
             icon.transform.SetParent(hexagon, false);
             var rect = (RectTransform)icon.transform;
@@ -68,6 +72,7 @@ namespace BadNorthMP.UI
             if (canvas) { canvas.additionalShaderChannels |= NativeWidgets.ShaderChannels; canvas.rootCanvas.additionalShaderChannels |= NativeWidgets.ShaderChannels; }
         }
 
+        private const string IconName = "BNMP Relic";
         private static MaskedSprite template;
 
         /// <summary>One of the game's upgrade icons (the new-game relic carousel's), or any masked icon.</summary>
@@ -88,7 +93,7 @@ namespace BadNorthMP.UI
         private static void Plain(RectTransform hexagon, Sprite sprite)
         {
             if (!sprite) return;
-            var go = new GameObject("BNMP Relic", typeof(RectTransform));
+            var go = new GameObject(IconName, typeof(RectTransform));
             go.transform.SetParent(hexagon, false);
             var rect = (RectTransform)go.transform;
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
