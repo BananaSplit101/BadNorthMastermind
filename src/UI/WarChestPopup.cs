@@ -109,7 +109,7 @@ namespace BadNorthMP.UI
             {
                 bool unlocked = Unlocked(state, i);
                 VikingReference reference = Reference(i);
-                units[i].SetIcon(reference ? reference.sprite2 : null);
+                units[i].SetIcon(UnitIcons.Of(reference));
                 units[i].Available = unlocked;
                 units[i].Selected = i == type;
                 units[i].caption.color = i == type ? Gold : unlocked ? Color.white : Muted;
@@ -194,7 +194,7 @@ namespace BadNorthMP.UI
                 var commander = state.commanders[i];
                 bool rests = commander.status == CommanderStatus.Resting;
                 VikingReference reference = Reference(commander.type);
-                button.SetIcon(reference ? reference.sprite2 : null);
+                button.SetIcon(UnitIcons.Of(reference));
                 button.SetCount(commander.id.ToString());
                 bool dead = commander.status == CommanderStatus.Deployed && MastermindPanel.Instance && MastermindPanel.Instance.IsFallen(commander.id);
                 button.Available = !rests && !dead;
@@ -222,7 +222,7 @@ namespace BadNorthMP.UI
             if (Time.unscaledTime < nextReferenceSearch) return null;
             nextReferenceSearch = Time.unscaledTime + 2f;
             foreach (VikingReference candidate in Resources.FindObjectsOfTypeAll<VikingReference>())
-                if (candidate && candidate.sprite2 && MastermindUpgrades.ValidType(candidate.type))
+                if (candidate && UnitIcons.Has(candidate) && MastermindUpgrades.ValidType(candidate.type))
                     references[(int)candidate.type] = candidate;
             return references.TryGetValue(type, out found) ? found : null;
         }

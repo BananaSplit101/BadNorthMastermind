@@ -152,6 +152,7 @@ namespace BadNorthMP.UI
                 try { slot.hero = PartyFlow.CreateStartingHero(PartyFlow.StartingHeroId(slot.player, slot.index), slot.choice, slot.trait, slot.item); }
                 catch (Exception e) { PreviewFailed(e); }
                 if (slot.hero == null) { ReleaseBuilding(); baking = false; generation = null; yield break; }
+                LogCard(slot);
                 building.Add(slot);
                 yield return null;
             }
@@ -191,6 +192,19 @@ namespace BadNorthMP.UI
                 rendered[i] = slot;
             }
             baking = false; generation = null;
+        }
+
+        /// <summary>
+        /// What a card was made from and a short code for the face it got, so two players' logs show whether their
+        /// games drew the same commander for the same pick (and if not, whether the picks or the drawing differed).
+        /// </summary>
+        private static void LogCard(Slot slot)
+        {
+            string look = slot.hero.propertyBank != null ? slot.hero.propertyBank.GetPrint() : "";
+            uint hash = 2166136261;
+            foreach (char c in look) unchecked { hash ^= c; hash *= 16777619; }
+            ModLog.Info($"Draft card: {SteamSession.NameOf(new CSteamID(slot.player))} slot {slot.index + 1}: commander {PartyFlow.StartingHeroId(slot.player, slot.index)}, " +
+                $"choice {slot.choice + 1}, trait '{slot.trait}', item '{slot.item}', party {PartyFlow.State.seed} -> {slot.hero.dbgName}, look {hash:x8}");
         }
 
         private void ReleaseBuilding()

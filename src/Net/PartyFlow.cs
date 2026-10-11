@@ -467,7 +467,12 @@ namespace BadNorthMP.Net
             int total = State.seats.Count == 1 ? 2 : State.seats.Count;
             hero.hue = ((State.seed % 1000) / 1000f + id / (float)total) % 1f;
             hero.color = HeroGeneratorUI.instance.gradient.Evaluate(hero.hue);
-            hero.monoHero.Setup(hero, hero.upgrades, HeroGeneratorUI.instance.swapSource, unchecked(id + State.seed), crop: false);
+            // Seeded too, like the game's own randomising above: every player's game draws the same face for a pick,
+            // whatever random numbers it drew before.
+            UnityEngine.Random.State before = UnityEngine.Random.state;
+            UnityEngine.Random.InitState(unchecked(id + State.seed));
+            try { hero.monoHero.Setup(hero, hero.upgrades, HeroGeneratorUI.instance.swapSource, unchecked(id + State.seed), crop: false); }
+            finally { UnityEngine.Random.state = before; }
             return hero;
             }
             catch

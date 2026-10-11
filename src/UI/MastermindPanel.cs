@@ -118,7 +118,7 @@ namespace BadNorthMP.UI
             if (Time.unscaledTime < nextReferenceSearch) return null;
             nextReferenceSearch = Time.unscaledTime + 2f;
             foreach (VikingReference candidate in Resources.FindObjectsOfTypeAll<VikingReference>())
-                if (candidate && candidate.sprite2 && MastermindUpgrades.ValidType(candidate.type))
+                if (candidate && UnitIcons.Has(candidate) && MastermindUpgrades.ValidType(candidate.type))
                     references[(int)candidate.type] = candidate;
             return references.TryGetValue(type, out found) ? found : null;
         }
@@ -491,6 +491,7 @@ namespace BadNorthMP.UI
             for (int i = 0; i < cards.Count; i++)
             {
                 int count = here != null ? here[i] : 0;
+                cards[i].button.SetIcon(UnitIcons.Of(cards[i].type)); // its picture, once the game has one
                 cards[i].button.SetCount(count > 0 ? count.ToString() : null);
                 cards[i].button.Available = beachIndex >= 0 && (count > 0 || cost + Economy.UnitCost(cards[i].type) <= s.waveBudget + 0.001f);
             }
@@ -701,7 +702,7 @@ namespace BadNorthMP.UI
                 if (i >= count) continue;
                 var commander = state.commanders[i];
                 VikingReference reference = Reference(commander.type);
-                button.SetIcon(reference ? reference.sprite2 : null);
+                button.SetIcon(UnitIcons.Of(reference));
                 button.SetCount(commander.id.ToString());
                 bool picked = selected.Contains(commander.id);
                 button.Selected = picked;
@@ -853,7 +854,7 @@ namespace BadNorthMP.UI
                     var rect = (RectTransform)marker.root.transform;
                     rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
                     VikingReference reference = Reference(commander.type);
-                    marker.SetIcon(reference ? reference.sprite2 : null);
+                    marker.SetIcon(UnitIcons.Of(reference));
                     marker.SetCount(id.ToString());
                     commanderMarkers[id] = marker;
                 }
@@ -1082,7 +1083,7 @@ namespace BadNorthMP.UI
                 var card = new UnitCard { type = type };
                 card.button = NativeRoundButton.Create(armyRow, 80f, font, click => CardClicked(card, click));
                 card.button.root.transform.SetSiblingIndex(index++); // Send now stays last
-                card.button.SetIcon(type.sprite2);
+                card.button.SetIcon(UnitIcons.Of(type));
                 card.button.SetTooltip(Name((int)type.type));
                 card.button.caption.text = $"<color=#FFD36B>{Economy.UnitCost(type)}</color> gold";
                 cards.Add(card);

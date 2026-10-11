@@ -18,6 +18,7 @@ namespace UnityEngine {
  public class Gradient {public Color Evaluate(float value){return new Color();}}
  public static class Mathf {public static int Clamp(int v,int lo,int hi){return Math.Min(Math.Max(v,lo),hi);}public static float Max(float a,float b){return Math.Max(a,b);}public static float Sqrt(float n){return (float)Math.Sqrt(n);}public static int RoundToInt(float n){return (int)Math.Round(n);}}
  public static class Time {public static float unscaledTime;}
+ public static class Random {public struct State {} public static State state; public static int seeded; public static void InitState(int s){seeded++;}}
  public static class Resources { public static object[] loaded=new object[0]; public static T[] FindObjectsOfTypeAll<T>(){var l=new List<T>();foreach(var x in loaded) if(x is T)l.Add((T)x);return l.ToArray();} }
  public class Camera {public Vector3 WorldToScreenPoint(Vector3 x){return x;} }
  public enum KeyCode {Alpha1=49,H=104}

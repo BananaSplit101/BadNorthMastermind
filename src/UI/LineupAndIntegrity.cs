@@ -78,7 +78,7 @@ namespace BadNorthMP.UI
             if (!Roles.IsMastermind || ___seen || ___vikingReference == null || ___vikingReference.seen) return true;
             var headshot = __instance.GetComponent<HeadshotImage>();
             if (!headshot) return true;
-            headshot.sprite = ___vikingReference.sprite2;
+            headshot.sprite = UnitIcons.Of(___vikingReference);
             headshot.rectTransform.sizeDelta = headshot.rectTransform.sizeDelta * __instance.scale;
             ___seen = true;
             __result = false;
