@@ -444,6 +444,15 @@ namespace BadNorthMP.Net
             Check(SteamSession.Instance.Sent.Count == 1, "late join snapshot not delivered");
             BattleStream.Active = true; Profile.campaign.seed = 1200; CampaignSync.MarkDirty(); SteamSession.Instance.Sent.Clear(); Tick(); Check(SteamSession.Instance.Sent.Count == 0, "campaign replaced battle stream");
             BattleStream.Active = false; Tick(); Tick(); Check(SteamSession.Instance.Sent.Count == 2, "deferred dirty map not sent after battle");
+            // The end of an island saves before the map loads, and the load can outlast MaxSettle: once the map is up the
+            // leader still waits a moment, so the map's own changes go out with it instead of in a second reload.
+            Singleton<Stack>.instance.stateCampaign.SetActive(false); Profile.campaign.seed = 1250; CampaignSync.MarkDirty();
+            for (int i = 0; i < 8; i++) Tick();
+            Singleton<Stack>.instance.stateCampaign.SetActive(true); SteamSession.Instance.Sent.Clear(); Tick();
+            Check(SteamSession.Instance.Sent.Count == 0, "snapshot sent the moment the map came up after a long load");
+            Profile.campaign.seed = 1251; CampaignSync.MarkDirty(); Tick(); Tick(); Tick();
+            Check(SteamSession.Instance.Sent.Count == 2, "the end of an island and the map opening weren't sent as one snapshot: " + SteamSession.Instance.Sent.Count);
+            Tick(); Tick(); SteamSession.Instance.Sent.Clear(); Tick(); Check(SteamSession.Instance.Sent.Count == 0, "settled map sent again");
             // Broadcast upgrades: a quiet save refreshes the snapshot for late joiners only; a refused one resends to one player.
             SteamSession.Instance.Sent.Clear(); CampaignSync.MarkQuiet(); Tick(); Check(SteamSession.Instance.Sent.Count == 0, "quiet upgrade save reloaded current viewers");
             SteamSession.Instance.members.Add(new CSteamID(4)); SteamSession.Instance.Sent.Clear(); Tick(); Check(SteamSession.Instance.Sent.Count == 1, "late joiner missed the quietly refreshed campaign");

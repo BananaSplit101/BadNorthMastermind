@@ -63,7 +63,10 @@ namespace BadNorthMP.Net
 
         // Changes come in bursts (the end of an island saves, the map opens, the menu reopens, ...), and every snapshot
         // sent makes every viewer reload their map: the leader waits until the campaign has been still for Settle
-        // seconds (on the map for that long too), at most MaxSettle seconds from the first change, and sends that once.
+        // seconds (on the map for that long too), at most MaxSettle seconds from the first change or from the map
+        // coming up, whichever is later (the end of an island saves before a load that can take longer than that), and
+        // sends that once. The map's own background work saves too (islands built as they come within reach), but
+        // every viewer's map works that out for itself: those saves are quiet (IslandGeneratorQuietSavePatch).
         private const float Settle = 1.5f, MaxSettle = 6f;
         private static float changedAt, firstChangeAt = -1f, mapSince = -1f;
 
@@ -89,7 +92,7 @@ namespace BadNorthMP.Net
         {
             if (snapshot == null || (!dirty && !quiet) || firstChangeAt < 0f) return false;
             float now = Time.unscaledTime;
-            if (now - firstChangeAt >= MaxSettle) return false;
+            if (now - Math.Max(firstChangeAt, mapSince) >= MaxSettle) return false;
             return now - changedAt < Settle || now - mapSince < Settle;
         }
 

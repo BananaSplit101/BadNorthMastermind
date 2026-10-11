@@ -118,6 +118,32 @@ namespace BadNorthMP.Spectator
         }
     }
 
+    // The map builds islands in the background as they come within reach (after every island) and saves what it
+    // worked out for them (seeds, houses). Every viewer's own map works out the same, so those saves only refresh
+    // the leader's snapshot for late joiners: sent loudly, they made everyone load the map a second time.
+    [HarmonyPatch(typeof(IslandGenerator), "InfiniteEnumerator")]
+    internal static class IslandGeneratorQuietSavePatch
+    {
+        private static void Postfix(ref IEnumerator<Voxels.GenInfo> __result) => __result = Quietly(__result);
+
+        private static IEnumerator<Voxels.GenInfo> Quietly(IEnumerator<Voxels.GenInfo> original)
+        {
+            try
+            {
+                while (true)
+                {
+                    bool before = CampaignSync.QuietSave, more;
+                    CampaignSync.QuietSave = true;
+                    try { more = original.MoveNext(); }
+                    finally { CampaignSync.QuietSave = before; }
+                    if (!more) yield break;
+                    yield return original.Current;
+                }
+            }
+            finally { original.Dispose(); }
+        }
+    }
+
     [HarmonyPatch(typeof(CampaignMapUI), nameof(CampaignMapUI.OpenMenu))]
     internal static class CampaignMapOpenedPatch
     {
