@@ -22,7 +22,7 @@ namespace BadNorthMP.Net
     /// </summary>
     internal class Updater : MonoBehaviour
     {
-        public const string Repo = "BananaSplit101/BadNorthMastermind";
+        public const string Repo = ReleaseChannel.Repo; // this branch's releases (the public mod, or its test repo)
         // GitHub redirects these to the release's files; UnityWebRequest follows the redirect.
         private const string LatestUrl = "https://github.com/" + Repo + "/releases/latest/download/latest.txt";
         private static string DllUrl(string version) => "https://github.com/" + Repo + "/releases/download/v" + version + "/BadNorthMP.dll";

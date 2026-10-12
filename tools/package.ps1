@@ -2,7 +2,9 @@
 #   BadNorthMP.zip  first-time install: the mod plus BepInEx (taken from your game install)
 #   BadNorthMP.dll  what the in-game updater downloads
 #   latest.txt      version, size and SHA-256 of the DLL; the updater reads it from the newest release
-# With -Publish it also creates the GitHub release v<version> with those files (needs the GitHub CLI, signed in).
+# With -Publish it also creates the GitHub release v<version> with those files (needs the GitHub CLI, signed in), in
+# this branch's release repo (src/Net/ReleaseChannel.cs): main publishes the public mod, the battleship branch its
+# test repo. Either way the branch has to be pushed (to its own remote) first.
 # Usage: pwsh tools/package.ps1 [-Publish] [-Notes "What changed"] [-GameDir "D:\...\BadNorth"]
 param(
     [switch]$Publish,
@@ -11,8 +13,11 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-$repo = "BananaSplit101/BadNorthMastermind"
 $root = Split-Path $PSScriptRoot -Parent
+$channelFile = Get-Content "$root\src\Net\ReleaseChannel.cs" -Raw
+$repo = [regex]::Match($channelFile, 'Repo = "([^"]+)"').Groups[1].Value
+$channel = [regex]::Match($channelFile, 'Name = "([^"]+)"').Groups[1].Value
+if (-not $repo -or -not $channel) { throw "src/Net/ReleaseChannel.cs doesn't name a release repo" }
 $version = [regex]::Match((Get-Content "$root\src\Plugin.cs" -Raw), 'Version = "([^"]+)"').Groups[1].Value
 $dist = Join-Path $root "dist"
 $stage = Join-Path $dist "stage"
@@ -22,8 +27,13 @@ if ($Publish) {
     # A release must be built from exactly what's on GitHub, so its tag points at the code it was built from.
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "Publishing needs the GitHub CLI (winget install GitHub.cli), then: gh auth login" }
     if (git -C $root status --porcelain) { throw "Commit your changes first" }
-    git -C $root fetch -q origin main
-    if ((git -C $root rev-parse HEAD) -ne (git -C $root rev-parse origin/main)) { throw "Push main first (git push)" }
+    # The branch's own remote (main: origin, battleship: the private repo).
+    $upstream = git -C $root rev-parse --abbrev-ref --symbolic-full-name "@{u}"
+    if (-not $upstream) { throw "This branch has no remote to compare with" }
+    $remote, $branch = $upstream -split "/", 2
+    git -C $root fetch -q $remote $branch
+    if ((git -C $root rev-parse HEAD) -ne (git -C $root rev-parse $upstream)) { throw "Push $branch first (git push)" }
+    Write-Host "Publishing the $channel build to $repo"
     gh release view "v$version" --repo $repo *> $null
     if ($LASTEXITCODE -eq 0) { throw "Release v$version already exists: bump Version in src/Plugin.cs" }
 }
@@ -59,6 +69,7 @@ Write-Host "Release files for $version are in $release"
 if ($Publish) {
     $body = if ($Notes) { $Notes } else { "Bad North Multiplayer $version" }
     $body += "`n`nNew install: extract BadNorthMP.zip into the Bad North folder (next to BadNorth.exe). Existing installs update from the Multiplayer screen."
+    if ($channel -ne "public") { $body += "`n`nA $channel test build of Bad North Multiplayer. Credits and licences of its models and sounds: see the README." }
     gh release create "v$version" "$release\BadNorthMP.zip" "$release\BadNorthMP.dll" "$release\latest.txt" `
         --repo $repo --target main --title "Bad North Multiplayer $version" --notes $body
     if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }

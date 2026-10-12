@@ -98,7 +98,7 @@ namespace BadNorthMP.UI
 
             bool versionMismatch = Session.InLobby && !Updater.Compatible;
             if (!versionMismatch && Spectator.SpectatorSession.Active)
-                AddButton("Stop watching", Spectator.SpectatorSession.Instance.Stop);
+                AddButton("Stop watching", Spectator.SpectatorSession.Instance.StopWatching);
             else if (Session.Ready && !Session.InLobby && !InCampaign())
                 GameUi.AddPopupButton(popup, "Play", () => { overlay = null; CampaignScreen.Open(); }, closes: true);
 

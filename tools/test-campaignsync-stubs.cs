@@ -98,6 +98,7 @@ namespace Voxels.TowerDefense
         {
             BadNorthMP.Net.CampaignSyncTest.Flow.Add("generate");
             if (BadNorthMP.Net.CampaignSyncTest.FailGenerate) throw new Exception("mock generation failure");
+            while (BadNorthMP.Net.CampaignSyncTest.HangGenerate) yield return null; // the game's own loader waiting forever
             Singleton<CampaignManager>.instance.campaign = new Voxels.TowerDefense.CampaignGeneration.Campaign(save);
             yield return null;
         }
@@ -180,6 +181,13 @@ namespace Voxels.TowerDefense.UI
             completion = completionCallback; routine = routines[0];
             Singleton<Voxels.TowerDefense.Stack>.instance.stateLoading.SetActive(true);
         }
+        /// <summary>One step of the loading routine, as the game's loading screen runs it each frame (false: it ended).</summary>
+        public static bool Step()
+        {
+            if (routine == null) return false;
+            if (routine.MoveNext()) return true;
+            return false;
+        }
         public static void Finish()
         {
             if (routine == null) return; // nothing started loading
@@ -213,7 +221,8 @@ namespace BadNorthMP.Net
     using Voxels.TowerDefense;
     using Voxels.TowerDefense.ProfileInternals;
     using BadNorthMP.Spectator;
-    public enum MsgType : byte { HostLoading = 45, CampaignChunk = 46, CampaignClosed = 47, CampaignRequest = 68 }
+    public enum MsgType : byte { HostLoading = 45, CampaignChunk = 46, CampaignClosed = 47, CampaignRequest = 68, BattleRequest = 82 }
+    public static class LoadGate { public static int Forgot; public static void ForgetReport() { Forgot++; } }
     public static class PartyFlow { public static float StartedAt; }
     public static class Packet
     {
@@ -278,7 +287,7 @@ namespace BadNorthMP.Net
     public static class CampaignSyncTest
     {
         public static List<string> Flow = new List<string>();
-        public static bool FailPlay, FailGenerate, FailLoadingStart, FailLeave, FailShutdown, FailClear;
+        public static bool FailPlay, FailGenerate, FailLoadingStart, FailLeave, FailShutdown, FailClear, HangGenerate;
         static SpectatorSession watcher;
         static void Check(bool condition, string reason) { if (!condition) throw new Exception(reason); }
         static void Tick() { UnityEngine.Time.unscaledTime += 1; typeof(SpectatorSession).GetMethod("Update", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(watcher, null); }
@@ -366,6 +375,10 @@ namespace BadNorthMP.Net
             watcher.Watch(Info(630, 1)); Complete();
             Flow.Clear(); watcher.BattleEnded(); Tick(); watcher.Watch(Info(640, 1)); Complete();
             Check(SpectatorSession.IslandReady() && Profile.campaign.seed == 640 && Flow.FindAll(step => step == "generate").Count == 1, "a retry loaded the map before the battle");
+            // Every new battle, and every battle's end, forgets the island this player said it was ready for: a retry
+            // reloads the same island number, and the old "ready" mustn't count for it.
+            int forgot = LoadGate.Forgot; watcher.BattleEnded(); watcher.Watch(Info(645, 1)); Complete();
+            Check(LoadGate.Forgot == forgot + 2, "a retry's island was counted ready from before it reloaded");
             // With nothing coming at all, the map as it was comes back after a while.
             watcher.BattleEnded(); for (int i = 0; i < 15; i++) Tick(); Complete();
             Check(SpectatorSession.ViewingCampaign, "the map never came back after a battle");
@@ -377,7 +390,28 @@ namespace BadNorthMP.Net
             FailShutdown = true; watcher.ViewCampaign(Info(680)); Complete(); FailShutdown = false;
             Check(SpectatorSession.Active, "shutdown failure released protection before generator teardown");
             Complete(); Check(!SpectatorSession.Active, "shutdown failure did not recover");
-            FailPlay = true; watcher.Watch(Info(700, 1)); Complete(); FailPlay = false;
+            // A load the game's own loader never finishes is abandoned after the limit; with the battle still on, the
+            // player asks the leader for it again from the main menu, and gets back in.
+            watcher.ViewCampaign(Info(690)); Complete();
+            SteamSession.Instance.Sent.Clear();
+            HangGenerate = true; watcher.Watch(Info(695, 1)); Tick();
+            int steps = 0;
+            while (Voxels.TowerDefense.UI.LoadingScreen.Step() && steps++ < 1000) UnityEngine.Time.unscaledTime += 5;
+            HangGenerate = false;
+            Check(steps < 1000, "a load stuck forever was never abandoned");
+            Voxels.TowerDefense.UI.LoadingScreen.Finish(); Complete(); Tick();
+            Check(!SpectatorSession.Active, "an abandoned load didn't go back to the main menu");
+            Func<int> battleRequests = () => SteamSession.Instance.Sent.FindAll(packet => packet[0] == (byte)MsgType.BattleRequest).Count;
+            Check(battleRequests() == 1, "the battle wasn't asked for again after an abandoned load");
+            Tick(); Check(battleRequests() == 1, "the battle was asked for again too soon");
+            for (int i = 0; i < 10; i++) Tick();
+            Check(battleRequests() == 2, "the battle wasn't asked for again a while later");
+            watcher.Watch(Info(696, 1)); Complete();
+            Check(SpectatorSession.IslandReady() && Profile.campaign.seed == 696, "the battle sent again wasn't joined");
+            for (int i = 0; i < 12; i++) Tick();
+            Check(battleRequests() == 2, "the battle was asked for while already in it");
+            watcher.BattleEnded(); Complete(); Complete();
+                        FailPlay = true; watcher.Watch(Info(700, 1)); Complete(); FailPlay = false;
             Complete(); Check(!SpectatorSession.Active && Object.ReferenceEquals(originalHandler, HarmonyLib.Traverse.Value), "PlayLevel failure left save protection stuck");
             Check(Object.ReferenceEquals(originalMeta, Profile.activeCampaignMeta), "local save meta not restored");
             Check(Object.ReferenceEquals(originalCampaign, Profile.campaign), "local campaign not restored");

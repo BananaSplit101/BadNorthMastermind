@@ -77,6 +77,7 @@ namespace BadNorthMP.Net
         DeployState = 76,       // leader -> all: PartyDeployment (who brings how many squads, everyone's picks, ready)
         DeployPick = 77,        // defender -> leader: int token, byte count, byte[] commanders, bool ready
         PlayerPing = 78,            // defender -> the other defenders: int levelIndex, byte kind, Vector3 position
+        BattleRequest = 82,     // watcher -> leader: (empty) the running battle again; sent when a stuck load of it was abandoned
         CampaignRequest = 68,   // watcher -> leader: (empty) the current campaign again; sent while it hasn't arrived
         CommanderOrder = 66,  // mastermind -> leader: int commanderId, byte kind (0 move, 1 burn, 2 release), int target (tile or house)
         VoteState = 63,      // leader -> all: int token, int seed, float secondsLeft, float launchSecondsLeft, bool nextTurnAllowed, byte count, (ulong player, int option)*, int decided

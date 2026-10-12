@@ -6,6 +6,16 @@ using Voxels.TowerDefense;
 
 namespace BadNorthMP.Spectator
 {
+    // The island's intro-music timer can fire after the island was taken down under it (a watcher reloading for a
+    // retried battle): the game's own code then throws a NullReferenceException every few seconds. There's nothing to
+    // play on an island that's gone.
+    [HarmonyPatch(typeof(IslandAmbiance), "TriggerIntroMusic")]
+    internal static class IntroMusicOnGoneIslandPatch
+    {
+        private static System.Exception Finalizer(System.Exception __exception) =>
+            __exception is System.NullReferenceException ? null : __exception;
+    }
+
     // While spectating, the island loads but none of the gameplay runs locally: no loadout, no squads,
     // no Viking raid, no win/lose checks. The defender's units are shown by the puppet layer instead.
 

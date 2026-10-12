@@ -160,6 +160,13 @@ namespace BadNorthMP.Net
             }));
         }
 
+        /// <summary>
+        /// Watchers: a new battle is on its way, or the last one ended. The island we said we were ready for is gone, and a
+        /// retry reloads the same island number: without forgetting, the old "ready" was repeated for the new island at
+        /// once (before it had even started loading), and the leader started without us.
+        /// </summary>
+        public static void ForgetReport() => reportedLevel = -1;
+
         private static void Report(int levelIndex)
         {
             reportedLevel = levelIndex;

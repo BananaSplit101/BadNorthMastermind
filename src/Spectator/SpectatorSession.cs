@@ -46,6 +46,14 @@ namespace BadNorthMP.Spectator
         private int failures;
         private bool gaveUp, profileWaitLogged;
         private float nextProfileNotice;
+        // The load in progress: which step it's on (for the log), and when it began. A load stuck longer than StuckLimit
+        // is abandoned like a failed one; if a battle is still on, the leader is asked for it again (BattleRequest).
+        internal const float StuckLimit = 90f;
+        private string loadStep = "";
+        private float loadStarted = -1f, nextStuckLog;
+        // The leader's battle is under way (it began and hasn't ended), whether or not this player made it in.
+        private bool battleUnderway;
+        private float nextBattleRequest;
 
         public static bool ViewingCampaign
         {
@@ -85,7 +93,9 @@ namespace BadNorthMP.Spectator
             // Reset before the new stream's reliable history arrives. During teardown IslandReady
             // stays false, so those events cannot be applied to the previous island.
             PuppetWorld.Reset();
+            LoadGate.ForgetReport();
             returnToMap = false;
+            battleUnderway = true;
             latestMap = new BattleInfo { levelIndex = -1, campaignSave = info.campaignSave };
             pendingMap = null;
             ModLog.Info("Spectator: queued battle, level " + info.levelIndex);
@@ -93,6 +103,13 @@ namespace BadNorthMP.Spectator
             pending = info;
             if (!Active && Singleton<CampaignManager>.instance && Singleton<CampaignManager>.instance.campaign)
                 MultiplayerGame.Instance.AddEvent("The defender started a battle. Go back to the main menu to watch it.");
+        }
+
+        /// <summary>The player chose to stop watching: leave, and don't ask to be let back into the battle.</summary>
+        public void StopWatching()
+        {
+            battleUnderway = false;
+            Stop();
         }
 
         /// <summary>Leave the island and go back to the main menu.</summary>
@@ -109,6 +126,8 @@ namespace BadNorthMP.Spectator
         public void BattleEnded()
         {
             pending = null;
+            battleUnderway = false;
+            LoadGate.ForgetReport();
             PuppetWorld.Reset();
             if (Roles.WatchesBattle)
             {
@@ -125,6 +144,11 @@ namespace BadNorthMP.Spectator
             CampaignSync.Update();
 
             if (Active && !Roles.WatchesBattle && !exitRequested) Stop();
+            if (transitioning && loadStarted >= 0f && Time.unscaledTime - loadStarted > 30f && Time.unscaledTime >= nextStuckLog)
+            {
+                nextStuckLog = Time.unscaledTime + 15f;
+                ModLog.Warn($"Spectator: still loading after {Time.unscaledTime - loadStarted:0} s ({loadStep})");
+            }
             if (transitioning || IsLoading()) return;
 
             if (Active && exitRequested)
@@ -167,6 +191,16 @@ namespace BadNorthMP.Spectator
                 return;
             }
             profileWaitLogged = false;
+
+            // The leader's battle is on but this player isn't in it (their load of it got stuck and was abandoned): ask
+            // the leader for it again, the way a player who joins mid-battle gets it.
+            if (battleUnderway && pending == null && !Active && Roles.WatchesBattle && SteamSession.Instance.InLobby &&
+                AtMainMenu() && Time.unscaledTime >= nextBattleRequest)
+            {
+                nextBattleRequest = Time.unscaledTime + 10f;
+                ModLog.Info("Spectator: not in the leader's battle; asking for it again");
+                SteamSession.Instance.Send(Roles.DefenderId, Packet.Build(MsgType.BattleRequest));
+            }
 
             if (pending != null && !Active && !AtMainMenu() && Time.unscaledTime >= nextPendingLog)
             {
@@ -294,6 +328,9 @@ namespace BadNorthMP.Spectator
             bool battle = !leave && info.levelIndex >= 0;
             loggedReady = false;
             bool failed = false;
+            loadStarted = Time.unscaledTime;
+            nextStuckLog = 0f;
+            loadStep = "starting";
             IEnumerator routine = ReplaceCampaign(save);
             try
             {
@@ -305,6 +342,7 @@ namespace BadNorthMP.Spectator
                 LoadingScreen.BeginLoadingPhase(leave ? string.Empty : battle ? "Joining the battle" : "Viewing defender campaign", () =>
                 {
                     transitioning = false;
+                    loadStarted = -1f;
                     try
                     {
                         if (failed)
@@ -336,6 +374,9 @@ namespace BadNorthMP.Spectator
                         }
                         else
                         {
+                            if (battle)
+                                ModLog.Info($"Spectator: not entering level {info.levelIndex}: " +
+                                    (exitRequested ? "leaving" : returnToMap ? "the battle ended meanwhile" : "a newer battle came meanwhile"));
                             onBattle = false;
                             if (loadingAnnounced && pending == null)
                             {
@@ -349,7 +390,7 @@ namespace BadNorthMP.Spectator
                         ModLog.Error("Spectator campaign completion failed: " + e);
                         Stop();
                     }
-                }, GuardRoutine(routine, () => failed = true));
+                }, GuardRoutine(routine, () => failed = true, () => loadStep));
             }
             catch (Exception e)
             {
@@ -359,8 +400,14 @@ namespace BadNorthMP.Spectator
             }
         }
 
-        private static IEnumerator GuardRoutine(IEnumerator routine, Action failed)
+        /// <summary>
+        /// A load that throws, or that's still going after StuckLimit seconds, counts as failed. The game's own campaign
+        /// load has waits with no end (for its scene preloader, for its campaign manager): one that never ends would
+        /// otherwise leave the player on the loading screen for good.
+        /// </summary>
+        private static IEnumerator GuardRoutine(IEnumerator routine, Action failed, Func<string> step)
         {
+            float started = Time.unscaledTime;
             while (true)
             {
                 bool more;
@@ -372,6 +419,12 @@ namespace BadNorthMP.Spectator
                     yield break;
                 }
                 if (!more) yield break;
+                if (Time.unscaledTime - started > StuckLimit)
+                {
+                    ModLog.Error($"Spectator: loading was stuck {step()} for {StuckLimit:0} s; starting over");
+                    failed();
+                    yield break;
+                }
                 yield return null;
             }
         }
@@ -380,8 +433,10 @@ namespace BadNorthMP.Spectator
         {
             SelectionLifecycle.Clear();
             var gameplay = Singleton<IslandGameplayManager>.instance;
+            float began = Time.unscaledTime;
             if (gameplay && gameplay.island)
             {
+                loadStep = "leaving the island";
                 // Do not run CompleteLevel/AbandonLevel: those change user stats and campaign progress.
                 var leave = gameplay.LeaveIslandRoutine(reset: false);
                 while (leave.MoveNext()) yield return null;
@@ -390,8 +445,10 @@ namespace BadNorthMP.Spectator
             var manager = Singleton<CampaignManager>.instance;
             if (manager && manager.campaign)
             {
+                loadStep = "stopping the island generator";
                 var shutdown = manager.islandGenerator.ShutDownRoutine();
                 while (shutdown.MoveNext()) yield return null;
+                loadStep = "clearing the campaign";
                 ClearCampaign(manager);
             }
             Singleton<Stack>.instance.stateCampaign.SetActive(false);
@@ -400,8 +457,11 @@ namespace BadNorthMP.Spectator
             Profile.activeCampaignMeta = save;
             // The memory in use, to see in a long session's log whether loads leave things behind.
             ModLog.Info($"Spectator: loading campaign 0x{save.seed:X8} ({GC.GetTotalMemory(false) / (1024 * 1024)} MB in use)");
+            loadStep = "generating the campaign (the game's own loader)";
             IEnumerator generate = CampaignManager.GenerateCampaign(save, campaignIsNew: false);
             while (generate.MoveNext()) yield return null;
+            loadStep = "done";
+            ModLog.Info($"Spectator: campaign loaded in {Time.unscaledTime - began:0.0} s");
         }
 
         /// <summary>

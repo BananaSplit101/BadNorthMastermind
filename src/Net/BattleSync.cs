@@ -65,6 +65,12 @@ namespace BadNorthMP.Net
             }
         }
 
+        /// <summary>A watcher's load of this battle got stuck: send it the battle again, with everything so far (Update).</summary>
+        public static void Resend(CSteamID member)
+        {
+            if (Active && sentTo.Remove(member)) ModLog.Info($"{SteamSession.NameOf(member)} asked for the battle again");
+        }
+
         public static void End()
         {
             if (!Active)
@@ -91,6 +97,10 @@ namespace BadNorthMP.Net
                     return;
                 ModLog.Info($"Received battle from {SteamSession.NameOf(sender)} ({payload.Length / 1024} KB)");
                 SpectatorSession.Instance.Watch(BattleInfo.FromBytes(payload));
+            });
+            Router.On(MsgType.BattleRequest, (sender, r) =>
+            {
+                if (Roles.IsDefender && SteamSession.Instance.Members().Contains(sender)) BattleStream.Resend(sender);
             });
             Router.On(MsgType.BattleEnd, (sender, r) =>
             {
