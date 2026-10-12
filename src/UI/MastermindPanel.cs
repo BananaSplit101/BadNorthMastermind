@@ -19,6 +19,10 @@ namespace BadNorthMP.UI
     ///   the bubble shows how many), and Send now, whose ring fills up as the wave's timer runs out;
     /// - bottom left: commander buttons (deploy, select, then click a tile or a house);
     /// - landing: shore tiles where ships fit glow blue; click one and it turns gold.
+    /// Commanding looks the way the game's own commanding of English squads does, as in GMW's Viking Invasion
+    /// (CommanderControls): a commander's Vikings glow under the mouse and tint while picked (click them to pick, or
+    /// its button), the game's tile grid shows while it takes orders (left- or right-click a tile sends it), and the
+    /// game's path line runs to wherever it was sent. Planning a landing shows the grid on the ship-ready shore only.
     /// Clicks on the island come from the game's own pointer (it already ignores camera drags and UI), and the
     /// war chest opens over everything (WarChestPopup).
     /// </summary>
@@ -45,7 +49,6 @@ namespace BadNorthMP.UI
             public TileTint(Color color) { this.color = color; }
         }
         private readonly TileTint landTint = new TileTint(Color.clear);
-        private readonly TileTint hoverTint = new TileTint(new Color(0.9f, 1f, 1f, 0.85f));
         private readonly TileTint chosenTint = new TileTint(new Color(1f, 0.76f, 0.15f, 0.95f));
         private readonly TileTint plannedTint = new TileTint(new Color(1f, 0.6f, 0.15f, 0.6f));
         private readonly TileTint orderTint = new TileTint(new Color(1f, 0.42f, 0.28f, 0.85f));
@@ -93,6 +96,12 @@ namespace BadNorthMP.UI
         private readonly List<NavSpot> landTiles = new List<NavSpot>();
         private NavSpot chosenSpot, hoveredSpot;
         private readonly Dictionary<int, NavSpot> orderedTiles = new Dictionary<int, NavSpot>();
+        // The game's commanding look: each commander's path line to its tile, and how much its Vikings glow (x, under
+        // the mouse) and tint (y, picked), easing in and out.
+        private static readonly Color CommanderColor = new Color(0.86f, 0.26f, 0.2f, 1f);
+        private readonly Dictionary<int, CommanderPath> paths = new Dictionary<int, CommanderPath>();
+        private readonly Dictionary<int, Vector2> glows = new Dictionary<int, Vector2>();
+        private int hoveredCommander = -1;
         private CampaignMapUI nativeMap;
         private float nextMapSearch, nextReferenceSearch;
         private readonly Dictionary<int, VikingReference> references = new Dictionary<int, VikingReference>();
@@ -168,6 +177,7 @@ namespace BadNorthMP.UI
                 HookPointer();
                 if (!chest) Keys();
                 if (!pointer && !chest) FallbackClicks();
+                RefreshCommanderLook(island);
                 RefreshBattle(island);
                 RefreshLandPin();
                 RefreshCommanderMarkers();
@@ -275,7 +285,13 @@ namespace BadNorthMP.UI
             if (!island || WarChestPopup.IsOpen || !battleRoot || !battleRoot.activeInHierarchy) return;
             if (button == PointerEventData.InputButton.Right)
             {
-                if (Ordering) Deselect();
+                // With commanders picked, right-click sends them like a left-click (as in Viking Invasion); off the
+                // island it lets them go.
+                if (Ordering)
+                {
+                    if (island.navSpotter.NavSpotCast(position)) OrderCommanders(island, position);
+                    else Deselect();
+                }
                 else if (!MastermindNet.State.done) ClearLandingAt(island, position);
                 return;
             }
@@ -294,24 +310,77 @@ namespace BadNorthMP.UI
             }
         }
 
+        /// <summary>A click on a commander's Vikings picks it (Shift: adds or removes it; clicking the only picked one lets it go).</summary>
         private bool SelectCommanderAt(Vector2 mouse)
+        {
+            int id = CommanderUnderMouse(mouse);
+            if (id < 0) return false;
+            Select(id, Shift);
+            return true;
+        }
+
+        /// <summary>The deployed commander with a (mirrored) Viking nearest the mouse, close enough to point at; -1 if none.</summary>
+        private int CommanderUnderMouse(Vector2 mouse)
         {
             var camera = Singleton<LevelCamera>.instance;
             var state = MastermindNet.State.upgrades;
-            if (!camera || !camera.cameraRef || state == null) return false;
+            if (!camera || !camera.cameraRef || state == null) return -1;
+            float reach = Mathf.Max(16f, Screen.height * 0.022f), best = reach * reach;
+            int found = -1;
             foreach (var commander in state.commanders)
-                // Clicking right by a commander that's already taking orders moves it there, unless Shift (un)picks it.
-                if (commander.status == CommanderStatus.Deployed && (Shift || !selected.Contains(commander.id)) &&
-                    CommanderPosition(commander.id, out Vector3 position))
+            {
+                if (commander.status != CommanderStatus.Deployed || !CommanderSquad(commander.id, out Squad squad)) continue;
+                foreach (Agent agent in squad.agents)
                 {
-                    Vector3 screen = camera.cameraRef.WorldToScreenPoint(position);
-                    if (screen.z > 0f && ((Vector2)screen - mouse).magnitude < 40f) { Select(commander.id, Shift); return true; }
+                    if (!agent || !agent.gameObject.activeInHierarchy || (agent.deadState != null && agent.deadState.active)) continue;
+                    Vector3 screen = camera.cameraRef.WorldToScreenPoint(agent.chestPos);
+                    if (screen.z <= 0f) continue;
+                    float distance = ((Vector2)screen - mouse).sqrMagnitude;
+                    if (distance < best) { best = distance; found = commander.id; }
                 }
-            return false;
+            }
+            return found;
+        }
+
+        /// <summary>
+        /// The game's commanding look, each frame: a commander's Vikings glow while the mouse is on them and tint while
+        /// it takes orders (as a defender squad does), and each one sent somewhere shows the game's path line there.
+        /// </summary>
+        private void RefreshCommanderLook(Island island)
+        {
+            var state = MastermindNet.State.upgrades;
+            bool pointing = !WarChestPopup.IsOpen && PointerOverIsland() && !LoadGate.Blocking;
+            hoveredCommander = pointing ? CommanderUnderMouse(Input.mousePosition) : -1;
+            if (state == null) return;
+            float dt = Time.unscaledDeltaTime;
+            foreach (var commander in state.commanders)
+            {
+                if (commander.status != CommanderStatus.Deployed) continue;
+                bool picked = selected.Contains(commander.id);
+                glows.TryGetValue(commander.id, out Vector2 glow);
+                glow.x = Mathf.Lerp(glow.x, commander.id == hoveredCommander ? 1f : 0f, dt * 12f);
+                glow.y = Mathf.Lerp(glow.y, picked ? 1f : 0f, dt * 10f);
+                glows[commander.id] = glow;
+                if (CommanderSquad(commander.id, out Squad squad))
+                {
+                    float hover = glow.x < 0.01f ? 0f : glow.x;
+                    Color tint = glow.y < 0.01f ? Color.clear : new Color(CommanderColor.r, CommanderColor.g, CommanderColor.b, glow.y);
+                    foreach (Agent agent in squad.agents)
+                        if (agent && agent.gameObject.activeInHierarchy) CommanderGlow.Set(agent, hover, tint);
+                }
+                if (paths.TryGetValue(commander.id, out CommanderPath path) && path != null)
+                {
+                    bool there = CommanderPosition(commander.id, out Vector3 position);
+                    path.Update(island, there ? position : (Vector3?)null, picked, Ordering);
+                }
+            }
         }
 
         /// <summary>Where a deployed commander's living Vikings are (their mirrored copies).</summary>
         private static bool CommanderPosition(int id, out Vector3 position) => PuppetWorld.CommanderPosition(id, out position);
+
+        /// <summary>A deployed commander's Vikings (their mirrored copies).</summary>
+        private static bool CommanderSquad(int id, out Squad squad) => PuppetWorld.CommanderSquad(id, out squad);
 
         private static bool CommanderKnown(int id) => PuppetWorld.CommanderKnown(id);
 
@@ -438,7 +507,12 @@ namespace BadNorthMP.UI
                 orderedTiles.Remove(commander);
                 if (!orderedTiles.ContainsValue(old)) old.RemoveHighlight(orderTint);
             }
-            if (spot) { orderedTiles[commander] = spot; spot.AddHighlight(orderTint); }
+            if (spot) orderedTiles[commander] = spot;
+            // The game's path line marks where it was sent; only if that can't be had, a tint on the tile does.
+            paths.TryGetValue(commander, out CommanderPath path);
+            if (path == null && spot && (path = CommanderPath.Create(CommanderColor)) != null) paths[commander] = path;
+            if (path != null) path.Aim(spot);
+            else if (spot) spot.AddHighlight(orderTint);
         }
 
         private void RefreshOrderedTiles()
@@ -559,14 +633,18 @@ namespace BadNorthMP.UI
             }
             plannedTint.color = new Color(1f, 0.6f, 0.15f, ordering ? 0.25f : 0.6f);
 
-            // Hover: any tile while a commander takes orders, otherwise only tiles ships can land on.
-            NavSpot target = !WarChestPopup.IsOpen && PointerOverIsland() ? island.navSpotter.NavSpotCast(Input.mousePosition) : null;
-            NavSpot hover = target && (ordering || (planning && landTiles.Contains(target))) && target != chosenSpot ? target : null;
+            // The game's own tile grid, the one an English squad gets: every tile while commanders take orders, the
+            // ship-ready shore while a landing is planned. Its hover lights the tile under the mouse (any tile while
+            // ordering, otherwise a shore one), but not while the mouse is on a commander's Vikings: that click picks.
+            bool chest = WarChestPopup.IsOpen;
+            NavSpot target = !chest && hoveredCommander < 0 && PointerOverIsland() ? island.navSpotter.NavSpotCast(Input.mousePosition) : null;
+            NavSpot hover = target && (ordering || (planning && landTiles.Contains(target))) ? target : null;
+            IslandGrid.Show(chest ? IslandGrid.Mode.Off : ordering ? IslandGrid.Mode.All : planning ? IslandGrid.Mode.Shore : IslandGrid.Mode.Off,
+                landTiles, hover);
             if (hover != hoveredSpot)
             {
-                if (hoveredSpot) hoveredSpot.RemoveHighlight(hoverTint);
                 hoveredSpot = hover;
-                if (hoveredSpot) { hoveredSpot.AddHighlight(hoverTint); if (!ordering) FabricWrapper.PostEvent("UI/InGame/TileHover"); }
+                if (hoveredSpot && !ordering && hoveredSpot != chosenSpot) FabricWrapper.PostEvent("UI/InGame/TileHover");
             }
         }
 
@@ -732,8 +810,9 @@ namespace BadNorthMP.UI
             selected.RemoveAll(id => state == null || !state.commanders.Exists(c => c.id == id && c.status == CommanderStatus.Deployed));
             string ordering = selected.Count == 1 ? $"Commander {selected[0]}" : $"{selected.Count} commanders";
             hintText.text = Ordering
-                ? $"{ordering}:  click a tile to move  ·  a house to burn  ·  R lets them roam  ·  right-click when done"
-                : deployed > 1 ? "Shift-click or Alt+drag to order several commanders at once" : "";
+                ? $"{ordering}:  click a tile to move  ·  a house to burn  ·  R lets them roam  ·  Esc when done"
+                : deployed > 1 ? "Click a commander's Vikings to order them  ·  Shift-click or Alt+drag for several" :
+                  deployed == 1 ? "Click a commander's Vikings to order them" : "";
         }
 
         // Commanders whose Vikings have been seen on this island (their mirrored Vikings show up a moment after landing).
@@ -897,8 +976,13 @@ namespace BadNorthMP.UI
             foreach (var spot in landTiles) if (spot) spot.RemoveHighlight(landTint);
             landTiles.Clear();
             if (chosenSpot) chosenSpot.RemoveHighlight(chosenTint);
-            if (hoveredSpot) hoveredSpot.RemoveHighlight(hoverTint);
             chosenSpot = hoveredSpot = null;
+            IslandGrid.Show(IslandGrid.Mode.Off, null, null);
+            foreach (CommanderPath path in paths.Values) if (path != null) path.Destroy();
+            paths.Clear();
+            glows.Clear();
+            CommanderGlow.Clear();
+            hoveredCommander = -1;
             foreach (var marker in commanderMarkers.Values) if (marker.root) Destroy(marker.root);
             commanderMarkers.Clear();
             foreach (var spot in orderedTiles.Values) if (spot) spot.RemoveHighlight(orderTint);

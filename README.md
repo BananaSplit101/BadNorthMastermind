@@ -88,6 +88,7 @@ ilspycmd -p -o decompiled "C:\Program Files (x86)\Steam\steamapps\common\BadNort
   - Unit Integrity Display;
   - Traits Galore: six of its new commander traits (all but Mad and Unpopular) and their icons;
   - Vanilla Traits Overhaul: new stats and behaviours for the game's 13 commander traits.
+- **GMW's Viking Invasion**, whose Viking controls the mastermind's commanding follows: the game's own tile grid, path line and squad glow, used for Vikings (written for this mod, not ported).
 - **ABaLaQiYaShanMaiI's BadNorthNewMode (MIT)**, for the Viking control rules: settling in place, unsticking, torches only at the house, box select, and orders from the ship.
 - The install zip bundles [BepInEx](https://github.com/BepInEx/BepInEx) (LGPL-2.1) with HarmonyX, MonoMod and Mono.Cecil (MIT).
 - **Bad North** is made by Plausible Concept and published by Raw Fury. This project is not affiliated with them.

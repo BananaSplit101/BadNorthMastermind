@@ -622,6 +622,13 @@ namespace BadNorthMP.Spectator
         public static bool CommanderKnown(int commanderId) =>
             commanderSquads.TryGetValue(commanderId, out int squadId) && squads.TryGetValue(squadId, out Squad squad) && squad;
 
+        /// <summary>A deployed commander's mirrored squad, while it exists here.</summary>
+        public static bool CommanderSquad(int commanderId, out Squad squad)
+        {
+            squad = null;
+            return commanderSquads.TryGetValue(commanderId, out int squadId) && squads.TryGetValue(squadId, out squad) && squad;
+        }
+
         /// <summary>Where a deployed commander's living Vikings are (their average position).</summary>
         public static bool CommanderPosition(int commanderId, out Vector3 position)
         {
