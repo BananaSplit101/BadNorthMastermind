@@ -11,7 +11,7 @@ namespace BadNorthMP
     {
         public const string Id = "com.bananasplit.badnorthmp";
         public const string Name = "Bad North Multiplayer";
-        public const string Version = "1.0.19";
+        public const string Version = "1.0.20";
 
         private void Awake()
         {
