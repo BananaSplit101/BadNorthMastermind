@@ -3,25 +3,21 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using BadNorthMP.Net;
-using HarmonyLib;
 using Steamworks;
 using UnityEngine;
 using UnityEngine.UI;
 using Voxels.TowerDefense;
 using Voxels.TowerDefense.HeroGeneration;
-using Voxels.TowerDefense.UI;
 
 namespace BadNorthMP.UI
 {
     internal sealed class CommanderDraftScreen : MonoBehaviour
     {
         private static CommanderDraftScreen instance;
-        private GameObject canvasObject, panel, grid;
-        private Font font;
-        private Sprite buttonSprite;
+        private GameObject canvasObject, grid;
         private Text title, roster, hint, continueText;
         private Button ready;
-        
+
         // One card per commander slot shown, in order. A new portrait rebuilds only that card (the old one stays up
         // until the new one is ready); a new trait or item is shown on the card in place.
         private sealed class Slot
@@ -38,9 +34,7 @@ namespace BadNorthMP.UI
         private bool baking;
         private string previewError;
         private Coroutine generation;
-        private readonly Color ink = new Color(0.2f, 0.17f, 0.15f);
-        private readonly Color paper = new Color(0.98f, 0.92f, 0.85f);
-        
+
         private void Awake() => instance = this;
         public static void Open()
         {
@@ -94,7 +88,7 @@ namespace BadNorthMP.UI
             else if (PartyFlow.Mine != null) result.Add(PartyFlow.Mine);
             return result;
         }
-        /// <summary>The cards that should be up: every commander slot of the seats shown, with its current picks.</summary>
+        /// <summary>Every commander slot of the seats shown, with its current picks.</summary>
         private static List<Slot> Wanted()
         {
             var wanted = new List<Slot>();
@@ -112,7 +106,6 @@ namespace BadNorthMP.UI
             return key.ToString();
         }
 
-        /// <summary>Bring the cards up to date with the picks: a new trait or item in place, a new portrait by rebuilding that card.</summary>
         private void Sync(List<Slot> wanted)
         {
             var rebuild = new List<int>();
@@ -195,8 +188,8 @@ namespace BadNorthMP.UI
         }
 
         /// <summary>
-        /// What a card was made from and a short code for the face it got, so two players' logs show whether their
-        /// games drew the same commander for the same pick (and if not, whether the picks or the drawing differed).
+        /// What a card was made from, and a hash of the face it got: two players' logs show whether their games drew
+        /// the same commander for the same pick.
         /// </summary>
         private static void LogCard(Slot slot)
         {
@@ -240,25 +233,11 @@ namespace BadNorthMP.UI
         private void OnDestroy() { ClearPreviews(); if (canvasObject) Destroy(canvasObject); }
         private void Build()
         {
-            foreach (var menu in Resources.FindObjectsOfTypeAll<MainMenu>())
-            {
-                var prefab = Traverse.Create(menu).Field<ButtonWidget>("textButtonPrefab").Value;
-                if (!prefab) continue;
-                if (prefab.label) font = prefab.label.font;
-                foreach (var image in prefab.GetComponentsInChildren<Image>(true)) if (image.sprite) { buttonSprite = image.sprite; break; }
-                if (font) break;
-            }
-            if (!font) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            canvasObject = new GameObject("BNMP Commander Selection", typeof(RectTransform)); DontDestroyOnLoad(canvasObject);
-            var canvas = canvasObject.AddComponent<Canvas>();
-            canvas.additionalShaderChannels = AdditionalCanvasShaderChannels.TexCoord1 | AdditionalCanvasShaderChannels.TexCoord2 | AdditionalCanvasShaderChannels.TexCoord3 | AdditionalCanvasShaderChannels.Normal | AdditionalCanvasShaderChannels.Tangent; canvas.renderMode = RenderMode.ScreenSpaceOverlay; canvas.sortingOrder = 650;
-            var scaler = canvasObject.AddComponent<CanvasScaler>(); scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080); scaler.matchWidthOrHeight = 1;
-            canvasObject.AddComponent<GraphicRaycaster>();
-            var shade = Node(canvasObject.transform, "Backdrop"); var shadeRect = (RectTransform)shade.transform;
-            shadeRect.anchorMin = Vector2.zero; shadeRect.anchorMax = Vector2.one; shadeRect.offsetMin = shadeRect.offsetMax = Vector2.zero;
+            canvasObject = GameStyle.Canvas("BNMP Commander Selection", 650);
+            var shade = Node(canvasObject.transform, "Backdrop");
+            GameStyle.Stretch((RectTransform)shade.transform);
             shade.AddComponent<Image>().color = new Color(0.12f, 0.12f, 0.12f, 0.78f);
-            panel = Node(canvasObject.transform, "Commander Menu"); var rect = (RectTransform)panel.transform;
+            var panel = Node(canvasObject.transform, "Commander Menu"); var rect = (RectTransform)panel.transform;
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f); rect.sizeDelta = new Vector2(1000, 900);
             panel.AddComponent<Image>().color = new Color(0.76f, 0.72f, 0.66f);
             var layout = panel.AddComponent<VerticalLayoutGroup>(); layout.padding = new RectOffset(30, 30, 24, 24);
@@ -286,18 +265,17 @@ namespace BadNorthMP.UI
         { var node = new GameObject(name, typeof(RectTransform)); node.transform.SetParent(parent, false); return node; }
         private Text Label(Transform parent, string value, int size, float height)
         {
-            var node = Node(parent, "Label"); var text = node.AddComponent<Text>(); text.font = font; text.fontSize = size;
-            text.color = ink; text.text = value; text.alignment = TextAnchor.MiddleCenter; text.raycastTarget = false;
+            var node = Node(parent, "Label"); var text = node.AddComponent<Text>(); text.font = GameStyle.Font; text.fontSize = size;
+            text.color = GameStyle.Ink; text.text = value; text.alignment = TextAnchor.MiddleCenter; text.raycastTarget = false;
             node.AddComponent<LayoutElement>().preferredHeight = height; return text;
         }
         private Button Button(Transform parent, string value, UnityEngine.Events.UnityAction action)
         {
-            var node = Node(parent, "Choice"); var image = node.AddComponent<Image>(); image.sprite = buttonSprite;
-            image.type = buttonSprite ? Image.Type.Sliced : Image.Type.Simple; image.color = paper;
+            var node = Node(parent, "Choice"); var image = node.AddComponent<Image>(); image.sprite = GameStyle.ButtonSprite;
+            image.type = GameStyle.ButtonSprite ? Image.Type.Sliced : Image.Type.Simple; image.color = GameStyle.ButtonColor;
             var button = node.AddComponent<Button>(); button.targetGraphic = image;
             button.onClick.AddListener(() => { FabricWrapper.PostEvent(FabricID.uiButtonClick); action(); });
-            var label = Label(node.transform, value, 23, 0); var rect = (RectTransform)label.transform;
-            rect.anchorMin = Vector2.zero; rect.anchorMax = Vector2.one; rect.offsetMin = rect.offsetMax = Vector2.zero;
+            GameStyle.Stretch(Label(node.transform, value, 23, 0).rectTransform);
             node.AddComponent<LayoutElement>().flexibleWidth = 1; return button;
         }
     }

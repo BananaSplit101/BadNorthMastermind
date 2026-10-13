@@ -7,8 +7,8 @@ using Voxels.TowerDefense.UI;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// The look of the game's own popups for our panels: its parchment panel and menu button sprites and font, plus
-    /// the few layout pieces our panels are built from.
+    /// The look of the game's own popups for our panels (parchment panel, menu button sprite and font), and the layout
+    /// pieces our panels are built from.
     /// </summary>
     internal static class GameStyle
     {
@@ -19,10 +19,12 @@ namespace BadNorthMP.UI
         public static Font Font { get; private set; }
         public static Sprite ButtonSprite { get; private set; }
         public static Sprite PanelSprite { get; private set; }
+        private static bool menuFound;
 
+        /// <summary>Looks again on each call until the main menu has loaded (a notice can go up while the game loads).</summary>
         private static void Find()
         {
-            if (Font) return;
+            if (menuFound) return;
             Font = Resources.GetBuiltinResource<Font>("Arial.ttf");
             foreach (ModalOverlay popup in Resources.FindObjectsOfTypeAll<ModalOverlay>())
             {
@@ -38,6 +40,7 @@ namespace BadNorthMP.UI
             {
                 var prefab = Traverse.Create(menu).Field<ButtonWidget>("textButtonPrefab").Value;
                 if (!prefab) continue;
+                menuFound = true;
                 if (prefab.label && prefab.label.font) Font = prefab.label.font;
                 foreach (Image image in prefab.GetComponentsInChildren<Image>(true))
                     if (image.sprite) { ButtonSprite = image.sprite; break; }

@@ -9,8 +9,8 @@ namespace BadNorthMP.UI
     internal static class GameUi
     {
         /// <summary>
-        /// A commander's portrait, drawn by the game's own portrait renderer (null if the game has none loaded). Its canvas
-        /// needs NativeWidgets.ShaderChannels, as the game's own have.
+        /// A commander's portrait, drawn by the game's own portrait renderer (null if none is loaded). Its canvas needs
+        /// NativeWidgets.ShaderChannels.
         /// </summary>
         public static MaskedSprite Portrait(Transform parent, Voxels.TowerDefense.HeroDefinition hero, float size)
         {
@@ -32,7 +32,6 @@ namespace BadNorthMP.UI
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
             rect.anchoredPosition = Vector2.zero; rect.sizeDelta = new Vector2(size, size);
             portrait.gameObject.SetActive(true);
-            foreach (var graphic in portrait.GetComponentsInChildren<Graphic>(true)) graphic.raycastTarget = false;
             portrait.Set(hero.graphics);
             return portrait;
         }

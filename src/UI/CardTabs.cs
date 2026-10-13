@@ -7,10 +7,8 @@ using Voxels.TowerDefense.ScriptAnimations;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// A cloned commander card's arrow tabs, moving the way they do on the game's own new-game cards
-    /// (NewGameTabAnimator, which the clone loses): each tab peeks out a little, slides all the way out (showing its
-    /// arrow) while the card is under the mouse, and swells a touch under the mouse itself, a little less while pressed.
-    /// Only on a card whose arrows do something (the player's own).
+    /// A cloned commander card's arrow tabs, animated as the game's NewGameTabAnimator does (the clone loses it): each
+    /// tab peeks out, slides all the way out while the card is under the mouse, and swells a touch under the mouse.
     /// </summary>
     internal sealed class CardTabs : MonoBehaviour
     {
@@ -32,9 +30,8 @@ namespace BadNorthMP.UI
         private bool open;
 
         /// <summary>
-        /// Before cloning: each arrow tab's slid-out size on the game's own card, by its path in the card. The game's
-        /// animator keeps it only in a closure, so it's read by sliding the tab out for a moment and back again (or,
-        /// if that card was never set up, it's simply still the size it was made at).
+        /// Before cloning: each arrow tab's slid-out size on the game's card, by its path in the card. The animator keeps
+        /// it only in a closure, so the tab is slid out for a moment and back (a card never set up is still that size).
         /// </summary>
         public static Dictionary<string, Vector2> SlidOutSizes(Transform original)
         {
@@ -63,12 +60,12 @@ namespace BadNorthMP.UI
         }
 
         /// <summary>
-        /// After cloning, before the clone's scripts are stripped: its tabs, with the sizes read off the original,
-        /// animated from <paramref name="host"/> (outside the clone, so the stripping leaves it be).
+        /// After cloning, before the clone's scripts are stripped: animates its tabs from <paramref name="host"/>
+        /// (outside the clone, so the stripping leaves it be).
         /// </summary>
-        public static CardTabs Attach(GameObject host, GameObject clone, Dictionary<string, Vector2> slidOut)
+        public static void Attach(GameObject host, GameObject clone, Dictionary<string, Vector2> slidOut)
         {
-            if (AnimatorType == null) return null;
+            if (AnimatorType == null) return;
             var tabs = new List<Tab>();
             foreach (Component animator in clone.GetComponentsInChildren(AnimatorType, true))
             {
@@ -84,11 +81,10 @@ namespace BadNorthMP.UI
                 }
                 tabs.Add(tab);
             }
-            if (tabs.Count == 0) return null;
+            if (tabs.Count == 0) return;
             var animated = host.AddComponent<CardTabs>();
             animated.tabs.AddRange(tabs);
             animated.card = (RectTransform)clone.transform;
-            return animated;
         }
 
         private static string PathOf(Transform root, Transform child)

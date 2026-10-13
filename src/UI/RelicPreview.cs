@@ -12,8 +12,8 @@ using Voxels.TowerDefense.UI;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// Relic islands on the campaign map show which relic they hold, for every player (the game only shows a "?" until
-    /// the island is won), and hovering one shows the relic's name and description (RelicTooltip).
+    /// Relic islands on the campaign map show which relic they hold (the game only shows a "?" until the island is won),
+    /// with the relic's name and description on hover (RelicTooltip).
     /// </summary>
     [HarmonyPatch]
     internal static class RelicPreviewPatch
@@ -36,8 +36,9 @@ namespace BadNorthMP.UI
                 if (!marker) return;
                 // The marker is a hexagon with the "?" drawn into the same picture ("Icon"): the relic takes its place.
                 var hexagon = marker.transform.Find("Icon") as RectTransform;
-                Show(hexagon ? hexagon : (RectTransform)marker.transform, level.item);
-                RelicTooltip.Track(hexagon ? hexagon : (RectTransform)marker.transform, marker, level.item);
+                if (!hexagon) hexagon = (RectTransform)marker.transform;
+                Show(hexagon, level.item);
+                RelicTooltip.Track(hexagon, marker, level.item);
             }
             catch (Exception e)
             {
@@ -62,7 +63,6 @@ namespace BadNorthMP.UI
             rect.offsetMin = rect.offsetMax = Vector2.zero;
             rect.localScale = Vector3.one;
             icon.gameObject.SetActive(true);
-            foreach (var graphic in icon.GetComponentsInChildren<Graphic>(true)) graphic.raycastTarget = false;
             icon.Set(relic, 0);
             // The "?" picture goes; its children (the relic) stay.
             var question = hexagon.GetComponent<Image>();
@@ -107,8 +107,8 @@ namespace BadNorthMP.UI
     }
 
     /// <summary>
-    /// Hovering a relic marker on the campaign map shows the relic's name and description. It only reads where the
-    /// mouse is (no raycast target), so clicking the island under the marker works as before.
+    /// A relic marker's name and description on hover. It only reads where the mouse is (no raycast target), so the
+    /// island under the marker still takes clicks.
     /// </summary>
     internal class RelicTooltip : MonoBehaviour
     {
@@ -159,7 +159,7 @@ namespace BadNorthMP.UI
 
         /// <summary>
         /// The camera that draws the marker. The map's markers sit in a world-space canvas without an event camera; the
-        /// campaign map's own camera (CampaignCameraController) draws them, straight to the screen.
+        /// campaign map's own camera (CampaignCameraController) draws them.
         /// </summary>
         private static Camera CameraOf(RectTransform rect)
         {

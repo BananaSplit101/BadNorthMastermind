@@ -1,25 +1,19 @@
 using BadNorthMP.Game;
 using BadNorthMP.Net;
-using HarmonyLib;
 using UnityEngine;
 using UnityEngine.UI;
-using Voxels.TowerDefense.UI;
 
 namespace BadNorthMP.UI
 {
-    // The host selects the campaign leader's separate multiplayer slots before the draft.
-    // This screen never reads or writes the host's single-player campaign list.
+    // The host picks one of the campaign leader's multiplayer save slots before the draft. It never touches the
+    // host's single-player campaigns.
     internal sealed class PartyCampaignPicker : MonoBehaviour
     {
         private static PartyCampaignPicker instance;
         private GameObject canvasObject, panel;
-        private Font font;
-        private Sprite buttonSprite;
         private int newSlot = -1, confirmDelete = -1;
         private float confirmUntil;
         private string catalogKey;
-        private readonly Color ink = new Color(.20f, .17f, .15f);
-        private readonly Color paper = new Color(.76f, .72f, .66f);
         public static void Open()
         {
             if (!Allowed()) return;
@@ -45,29 +39,13 @@ namespace BadNorthMP.UI
         private string CatalogKey() => PartyFlow.CatalogReady + ":" + string.Join("|", PartyFlow.SaveDetails);
         private void Build()
         {
-            foreach (var menu in Resources.FindObjectsOfTypeAll<MainMenu>())
-            {
-                var prefab = Traverse.Create(menu).Field<ButtonWidget>("textButtonPrefab").Value;
-                if (!prefab) continue;
-                if (prefab.label) font = prefab.label.font;
-                foreach (var image in prefab.GetComponentsInChildren<Image>(true))
-                    if (image.sprite) { buttonSprite = image.sprite; break; }
-                if (font) break;
-            }
-            if (!font) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            canvasObject = new GameObject("BNMP Multiplayer Saves", typeof(RectTransform));
-            DontDestroyOnLoad(canvasObject);
-            var canvas = canvasObject.AddComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay; canvas.sortingOrder = 660;
-            var scaler = canvasObject.AddComponent<CanvasScaler>(); scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080); scaler.matchWidthOrHeight = 1;
-            canvasObject.AddComponent<GraphicRaycaster>();
+            canvasObject = GameStyle.Canvas("BNMP Multiplayer Saves", 660);
             var shade = Node(canvasObject.transform, "Backdrop");
-            var shadeRect = (RectTransform)shade.transform; shadeRect.anchorMin = Vector2.zero; shadeRect.anchorMax = Vector2.one;
-            shadeRect.offsetMin = shadeRect.offsetMax = Vector2.zero;
+            GameStyle.Stretch((RectTransform)shade.transform);
             shade.AddComponent<Image>().color = new Color(.12f, .12f, .12f, .9f);
             panel = Node(canvasObject.transform, "Saved Games");
             var rect = (RectTransform)panel.transform; rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(.5f,.5f);
-            rect.sizeDelta = new Vector2(650, 830); panel.AddComponent<Image>().color = paper;
+            rect.sizeDelta = new Vector2(650, 830); panel.AddComponent<Image>().color = new Color(.76f, .72f, .66f);
             var layout = panel.AddComponent<VerticalLayoutGroup>(); layout.padding = new RectOffset(24,24,20,20);
             layout.spacing = 10; layout.childForceExpandHeight = false; layout.childForceExpandWidth = true;
         }
@@ -153,14 +131,14 @@ namespace BadNorthMP.UI
         { var go = new GameObject(name, typeof(RectTransform)); go.transform.SetParent(parent, false); return go; }
         private Text Label(Transform parent, string value, int size, float height)
         {
-            var go = Node(parent, "Label"); var text = go.AddComponent<Text>(); text.font = font; text.text = value;
-            text.fontSize = size; text.color = ink; text.alignment = TextAnchor.MiddleCenter; text.raycastTarget = false;
+            var go = Node(parent, "Label"); var text = go.AddComponent<Text>(); text.font = GameStyle.Font; text.text = value;
+            text.fontSize = size; text.color = GameStyle.Ink; text.alignment = TextAnchor.MiddleCenter; text.raycastTarget = false;
             go.AddComponent<LayoutElement>().preferredHeight = height; return text;
         }
         private Button Button(string value, UnityEngine.Events.UnityAction action, float height, Transform parent = null)
         {
             var go = Node(parent ? parent : panel.transform, "Campaign option"); var image = go.AddComponent<Image>();
-            image.sprite = buttonSprite; image.type = buttonSprite ? Image.Type.Sliced : Image.Type.Simple;
+            image.sprite = GameStyle.ButtonSprite; image.type = GameStyle.ButtonSprite ? Image.Type.Sliced : Image.Type.Simple;
             image.color = new Color(.95f,.90f,.83f); go.AddComponent<LayoutElement>().preferredHeight = height;
             var button = go.AddComponent<Button>(); button.targetGraphic = image; button.onClick.AddListener(action);
             var label = Label(go.transform, value, 32, 0); var rect = (RectTransform)label.transform;

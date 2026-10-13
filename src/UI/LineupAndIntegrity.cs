@@ -67,8 +67,8 @@ namespace BadNorthMP.UI
     }
 
     /// <summary>
-    /// The mastermind sends the Vikings, so it knows every type: the map's island icons show the real faces, not the
-    /// "?" the game keeps until the defenders' campaign has met that type. Not counted as a discovery (no flourish).
+    /// The mastermind knows every Viking type: the map's island icons show the real faces, not the "?" the game keeps
+    /// until the defenders' campaign has met that type. Not counted as a discovery (no flourish).
     /// </summary>
     [HarmonyPatch(typeof(LevelNodeEnemy), nameof(LevelNodeEnemy.UpdateVisual))]
     internal static class MastermindKnowsEveryVikingPatch
@@ -108,7 +108,7 @@ namespace BadNorthMP.UI
     {
         private EnglishSquad squad;
         private Text text;
-        private string baseName, shown;
+        private string baseName;
         private int peak;
 
         public void Initialize(EnglishSquad newSquad, Text label, string name)
@@ -117,7 +117,6 @@ namespace BadNorthMP.UI
             text = label;
             baseName = string.IsNullOrEmpty(name) ? squad.hero.dbgName : name;
             peak = 0;
-            shown = null;
             Refresh();
         }
 
@@ -133,9 +132,7 @@ namespace BadNorthMP.UI
             // A mirrored squad may not know its full size; the most it has had is the next best thing.
             int full = squad.maxCount > 0 ? squad.maxCount : peak;
             string wanted = $"{baseName}\n({living}/{full} left)";
-            if (wanted == shown && text.text == wanted) return;
-            shown = wanted;
-            text.text = wanted;
+            if (text.text != wanted) text.text = wanted;
         }
     }
 }

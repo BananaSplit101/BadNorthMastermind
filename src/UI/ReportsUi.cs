@@ -8,21 +8,17 @@ using Voxels.TowerDefense.UI;
 
 namespace BadNorthMP.UI
 {
-    /// <summary>
-    /// Error reports in the game's own popups: the one-time notice (the first time the player presses Play), the
-    /// on/off switch, and Report bug.
-    /// </summary>
+    /// <summary>Error reports in the game's own popups: the one-time notice, the on/off switch, and Report bug.</summary>
     internal static class ReportsUi
     {
         private static bool asking;
 
-        /// <summary>Whether the player still has to be told about error reports.</summary>
         public static bool NoticePending => ModConfig.ReportsNoticeShown != null && !ModConfig.ReportsNoticeShown.Value;
 
         /// <summary>
-        /// The first time: the notice instead (true), and <paramref name="then"/> once the player has answered.
-        /// Afterwards false: carry on. If the popup can't open, false too: never in the way of the button pressed (the
-        /// next place that asks, Play or Multiplayer, shows it).
+        /// The first time: shows the notice instead (true), and runs <paramref name="then"/> once the player has
+        /// answered. Otherwise false: carry on. If the popup can't open, false too, so it's never in the way of the
+        /// button pressed (the next place that asks shows it).
         /// </summary>
         public static bool Ask(Action then)
         {
@@ -58,14 +54,13 @@ namespace BadNorthMP.UI
             ModLog.Info(send ? "Error reports: on" : "Error reports: off (nothing is sent)");
         }
 
-        /// <summary>The Multiplayer screen's switch: "Error reports: On" / "Off".</summary>
         public static string SwitchLabel => "Error reports: " + (ModConfig.SendReports.Value ? "On" : "Off");
 
         public static void Switch() => Choose(!ModConfig.SendReports.Value);
 
         // ---- Report bug ----------------------------------------------------------------------------------------------
 
-        /// <summary>Report bug: what happened, in the player's words, sent with everyone in the lobby's logs.</summary>
+        /// <summary>What happened, in the player's words, sent with everyone in the lobby's logs.</summary>
         public static bool OpenBugReport()
         {
             if (Ask(() => OpenBugReport())) return true;

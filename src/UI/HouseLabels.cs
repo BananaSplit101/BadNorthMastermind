@@ -7,9 +7,8 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// A label over each house with a squad in it (or on its way): whose commander it is, e.g. "Joren's Mildred",
-    /// "Your Ulf", or just the commander in single player, tinted with that commander's banner colour. A squad still walking there shows faded, "on the way".
-    /// From Net.HouseOccupants; shown to every player on the island.
+    /// A label over each house with a squad in it or on its way (Net.HouseOccupants): whose commander it is, e.g.
+    /// "Joren's Mildred" or "Your Ulf", tinted with the commander's banner colour.
     /// </summary>
     internal class HouseLabels : MonoBehaviour
     {

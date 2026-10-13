@@ -10,9 +10,9 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// Before an island starts (DeployFlow): each defender picks which of their commanders go and presses Ready (in the
-    /// game's own loadout screen, or this panel's cards if that isn't there). Everyone else (the mastermind, a defender
-    /// already ready, one sitting the island out) sees each defender's picks so far: their portraits, and who's ready.
+    /// Before an island starts (DeployFlow): each defender picks which of their commanders go and presses Ready, in the
+    /// game's own loadout screen (or this panel's cards if that isn't there). Everyone else sees each defender's picks
+    /// so far and who's ready.
     /// </summary>
     internal class DeployPanel : MonoBehaviour
     {
@@ -46,7 +46,6 @@ namespace BadNorthMP.UI
             List<HeroDefinition> heroes = Profile.campaign != null ? Profile.campaign.heroes : null;
             bool choosing = mine != null && mine.Choosing && heroes != null;
             bool rescuer = mine != null && plan.rescueHero >= 0 && plan.rescueOwner == mine.player;
-            // The game's loadout screen does the picking; this panel only shows its own cards if that screen isn't there.
             bool native = !NativeLoadout.Unavailable;
             bool cardsShown = choosing && !native;
 
@@ -140,15 +139,20 @@ namespace BadNorthMP.UI
             foreach (int id in picked)
             {
                 if (id < 0 || id >= heroes.Count) continue;
-                var holder = new GameObject("Portrait", typeof(RectTransform));
-                holder.transform.SetParent(row, false);
-                var size = holder.AddComponent<LayoutElement>();
-                size.minWidth = size.preferredWidth = size.minHeight = size.preferredHeight = PickSize;
-                try { GameUi.Portrait(holder.transform, heroes[id], PickSize); }
-                catch (Exception e) { ModLog.Warn("Commander portrait unavailable: " + e.Message); }
+                Portrait(row, heroes[id], PickSize);
                 shown++;
             }
             if (shown == 0) GameStyle.Label(row, "no commanders picked yet", 15);
+        }
+
+        private static void Portrait(Transform parent, HeroDefinition hero, float size)
+        {
+            var holder = new GameObject("Portrait", typeof(RectTransform));
+            holder.transform.SetParent(parent, false);
+            var element = holder.AddComponent<LayoutElement>();
+            element.minWidth = element.preferredWidth = element.minHeight = element.preferredHeight = size;
+            try { GameUi.Portrait(holder.transform, hero, size); }
+            catch (Exception e) { ModLog.Warn("Commander portrait unavailable: " + e.Message); }
         }
 
         private static string Name(int hero)
@@ -176,12 +180,7 @@ namespace BadNorthMP.UI
             layout.childForceExpandHeight = layout.childForceExpandWidth = false;
             go.AddComponent<LayoutElement>().preferredWidth = 150f;
 
-            var holder = new GameObject("Portrait", typeof(RectTransform));
-            holder.transform.SetParent(go.transform, false);
-            var size = holder.AddComponent<LayoutElement>();
-            size.minWidth = size.preferredWidth = size.minHeight = size.preferredHeight = PortraitSize;
-            try { GameUi.Portrait(holder.transform, hero, PortraitSize); }
-            catch (Exception e) { ModLog.Warn("Commander portrait unavailable: " + e.Message); }
+            Portrait(go.transform, hero, PortraitSize);
             GameStyle.Label(go.transform, hero.dbgName, 18);
             var classDef = hero.classUpgrade != null ? hero.classUpgrade.definition : null;
             GameStyle.Label(go.transform, classDef ? classDef.dbgName : "Militia", 15);

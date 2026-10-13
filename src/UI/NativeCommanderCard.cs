@@ -11,7 +11,7 @@ using Voxels.TowerDefense.UI;
 
 namespace BadNorthMP.UI
 {
-    // Clone the actual new-game commander card, retaining its artwork and geometry only.
+    // A copy of the game's new-game commander card: its artwork and geometry only.
     internal sealed class NativeCommanderCard
     {
         public GameObject root;
@@ -20,7 +20,7 @@ namespace BadNorthMP.UI
         private sealed class Carousel { public bool item; public Text name; public MaskedSprite icon; public Sprite emptySprite, emptyMask; }
         private readonly List<Carousel> carousels = new List<Carousel>();
 
-        /// <summary>Show the hero's current starting trait and item (no rebuild: they don't change the portrait).</summary>
+        /// <summary>The hero's current starting trait and item, in place (they don't change the portrait).</summary>
         public void SetUpgrades(HeroDefinition hero)
         {
             foreach (Carousel carousel in carousels)
@@ -120,12 +120,14 @@ namespace BadNorthMP.UI
                     var driver = Traverse.Create(slave).Field<UpgradeCarousel>("driver").Value;
                     if (driver) slaves.Add(new KeyValuePair<UpgradeCarousel, Transform>(driver, slave.transform));
                 }
+            var selector = Traverse.Create(clone.GetComponent(type));
+            var itemCarousel = selector.Field<UpgradeCarousel>("itemCarousel").Value;
             // Snapshot the carousel references before removing their controllers.
             foreach (var carousel in clone.GetComponentsInChildren<UpgradeCarousel>(true))
             {
                 var previous = Traverse.Create(carousel).Field<UIClickable>("prevArrow").Value;
                 var next = Traverse.Create(carousel).Field<UIClickable>("nextArrow").Value;
-                bool item = carousel == Traverse.Create(clone.GetComponent(type)).Field<UpgradeCarousel>("itemCarousel").Value;
+                bool item = carousel == itemCarousel;
                 var selectedUpgrade = item ? hero.itemUpgrade : hero.traitUpgrade;
                 var definition = selectedUpgrade == null ? null : selectedUpgrade.definition;
                 Action<int> cycleUpgrade = item ? itemCycle : traitCycle;
@@ -153,7 +155,7 @@ namespace BadNorthMP.UI
                         if (text)
                         {
                             text.gameObject.SetActive(true);
-                            text.color = new Color(0.2f, 0.17f, 0.15f, 1);
+                            text.color = GameStyle.Ink;
                             shown.name = text;
                         }
                         var entry = (RectTransform)script.transform;
@@ -182,7 +184,7 @@ namespace BadNorthMP.UI
             }
             // The player's own card: its arrow tabs move as on the game's new-game cards (the animator is about to go).
             if (cycle != null) CardTabs.Attach(holder, clone, slidOut);
-            var deluxe = Traverse.Create(clone.GetComponent(type)).Field<BoolWidget>("deluxeDLCWidget").Value;
+            var deluxe = selector.Field<BoolWidget>("deluxeDLCWidget").Value;
             if (deluxe) deluxe.gameObject.SetActive(false);
             foreach (var script in clone.GetComponentsInChildren<MonoBehaviour>(true))
             {
@@ -193,7 +195,7 @@ namespace BadNorthMP.UI
             }
             foreach (var graphic in clone.GetComponentsInChildren<Graphic>(true)) graphic.raycastTarget = false;
             foreach (var canvas in clone.GetComponentsInChildren<Canvas>(true))
-            { canvas.overrideSorting = false; canvas.additionalShaderChannels = AdditionalCanvasShaderChannels.TexCoord1 | AdditionalCanvasShaderChannels.TexCoord2 | AdditionalCanvasShaderChannels.TexCoord3 | AdditionalCanvasShaderChannels.Normal | AdditionalCanvasShaderChannels.Tangent; }
+            { canvas.overrideSorting = false; canvas.additionalShaderChannels = NativeWidgets.ShaderChannels; }
             foreach (var group in clone.GetComponentsInChildren<CanvasGroup>(true))
             { group.alpha = 1; group.interactable = true; group.blocksRaycasts = true; }
             portrait.Set(hero.graphics); portrait.saturation = 1; name.text = hero.dbgName;

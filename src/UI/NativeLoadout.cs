@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using BadNorthMP.Net;
-using BadNorthMP.Spectator;
 using HarmonyLib;
 using I2.Loc;
 using UnityEngine;
@@ -13,10 +12,10 @@ namespace BadNorthMP.UI
 {
     /// <summary>
     /// The party's choice of commanders (DeployFlow) in the game's own loadout screen. Each defender's banners show only
-    /// their own commanders, as many as their share of squads (with copies of the banner past the game's four, the way
-    /// GMW's Extended Deployment adds them), plus the island's rescued commander for whoever commands it. Deploy marks
-    /// the player ready instead of landing anyone; the campaign leader lands everyone once all are ready. If the screen
-    /// can't be set up, DeployPanel's own cards stand in.
+    /// their own commanders, as many as their share of squads (copies of the banner past the game's four, the way GMW's
+    /// Extended Deployment adds them), plus the island's rescued commander for whoever commands it. Deploy marks the
+    /// player ready; the campaign leader lands everyone once all are. If the screen can't be set up, DeployPanel's own
+    /// cards stand in.
     /// </summary>
     internal class NativeLoadout : MonoBehaviour
     {
@@ -86,9 +85,9 @@ namespace BadNorthMP.UI
         }
 
         // ---- The game's own setup, kept to put back --------------------------------------------------------------
-        // The game sets each island's loadout up from its banners and slot count; a rescue island puts its commander
-        // in the last slot and fills the slots before it. Left at one player's share (one slot, say), the next rescue
-        // island had no slot before the last and ran off the end of the banners, which stopped the island loading.
+        // The game sets each island's loadout up from its banners and slot count, and a rescue island fills the slots
+        // before its commander's last one. Left at one player's share (one slot, say), the next rescue island ran off
+        // the end of the banners, which stopped the island loading.
 
         private static LoadoutUI nativeFor;
         private static LoadoutUIListBanner[] nativeBanners;
@@ -215,7 +214,7 @@ namespace BadNorthMP.UI
             }
         }
 
-        /// <summary>This player's picks: the commanders in their banners (the rescued one apart).</summary>
+        /// <summary>The commanders in this player's banners, the rescued one apart.</summary>
         public static List<int> Picks(LoadoutUI loadout)
         {
             var picks = new List<int>();
@@ -231,7 +230,7 @@ namespace BadNorthMP.UI
         }
     }
 
-    /// <summary>Each island's loadout is set up from the game's own banners and slots, whatever the last party choice left.</summary>
+    /// <summary>Each island's loadout is set up from the game's own banners and slots, whatever the party's choice left.</summary>
     [HarmonyPatch]
     internal static class PartyLoadoutSetupPatch
     {

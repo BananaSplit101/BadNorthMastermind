@@ -7,10 +7,9 @@ using Voxels.TowerDefense.SpriteMagic;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// A Viking type's picture for the mastermind's buttons. The game only fills a type's picture in (sprite2) once it
-    /// has set the type up (VikingReference.Start), which on the mastermind's game can come after the buttons are made
-    /// (on an island while the defenders choose their commanders, or on the map before any island); the same picture
-    /// is on the type's unit template, so that's used meanwhile.
+    /// A Viking type's picture for the mastermind's buttons. The game only fills it in (sprite2) once it has set the
+    /// type up (VikingReference.Start), which on the mastermind's game can come after the buttons are made; until then
+    /// the same picture comes from the type's unit template.
     /// </summary>
     internal static class UnitIcons
     {
@@ -29,7 +28,6 @@ namespace BadNorthMP.UI
             return sprite;
         }
 
-        /// <summary>Has a picture to show, from the game or from its template.</summary>
         public static bool Has(VikingReference reference) => Of(reference);
     }
 }
