@@ -20,6 +20,8 @@
     <ManagedDir>$(GameDir)\BadNorth_Data\Managed</ManagedDir>
     <BepInExDir>$(GameDir)\BepInEx</BepInExDir>
     <PluginDeployDir>$(BepInExDir)\plugins\BadNorthMP</PluginDeployDir>
+    <!-- The bug-report channel's Discord webhook: a file on the developer's PC, never in the repositories. -->
+    <BugWebhookFile Condition="'$(BugWebhookFile)' == ''">$(USERPROFILE)\.badnorthmp\bug-webhook.txt</BugWebhookFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -56,6 +58,8 @@
     <EmbeddedResource Include="..\assets\SailIn\*.ogg" LogicalName="BadNorthMP.Assets.%(Filename)%(Extension)" />
     <!-- Commander trait icons (GMW's Traits Galore). -->
     <EmbeddedResource Include="..\assets\Traits\*.png" LogicalName="BadNorthMP.Assets.%(Filename)%(Extension)" />
+    <!-- Without it the build works, but bug reports don't go to Discord (Telemetry/DiscordBugReports). -->
+    <EmbeddedResource Include="$(BugWebhookFile)" Condition="Exists('$(BugWebhookFile)')" LogicalName="BadNorthMP.Assets.bug-webhook.txt" />
   </ItemGroup>
 
   <Target Name="DeployPlugin" AfterTargets="Build">

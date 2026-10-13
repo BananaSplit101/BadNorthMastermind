@@ -76,6 +76,7 @@ namespace BadNorthMP.Telemetry
             props["incident_id"] = id;
             props["description"] = description;
             Reports.Event("bug_report", props);
+            DiscordBugReports.Send(id, description);
             return id;
         }
 

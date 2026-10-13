@@ -39,7 +39,7 @@ To help fix bugs, the mod sends error logs to [PostHog](https://posthog.com) (US
 - the mod version, the game and BepInEx versions, the installed mods, your OS, CPU, GPU and memory;
 - events like joining a lobby or starting an island.
 
-When something goes wrong, it becomes an *incident*: everyone in the lobby sends their recent log under one code, so every side of a multiplayer bug is there. **Report bug** in the pause menu does the same, with your description.
+When something goes wrong, it becomes an *incident*: everyone in the lobby sends their recent log under one code, so every side of a multiplayer bug is there. **Report bug** in the pause menu does the same, with your description, and also posts your description and recent log (names taken out) to the developer's bug-report channel on Discord.
 
 **What's never sent:** Steam names and Steam IDs (each player becomes a label like `player-3f9a2c`), and your Windows user name. Reports are tied to a random install id, not your Steam account. Logs wait in `BepInEx/BadNorthMP-logs/` until they're sent, so a crash's last lines go at the next launch.
 
