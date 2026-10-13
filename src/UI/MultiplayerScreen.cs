@@ -31,6 +31,11 @@ namespace BadNorthMP.UI
         private static bool autoOpenPending;
         public static void RequestOpen() { autoOpenPending = true; }
 
+        // The popup's text, laid out roomier: second lines (a player's role, recent events) smaller and softer, and a
+        // half-line gap between players. Sizes follow the popup's own font (read when it opens).
+        private const string Soft = "#7D7266";
+        private static int smallSize = 22, gapSize = 12;
+
         private static SteamSession Session => SteamSession.Instance;
         private static MultiplayerGame Game => MultiplayerGame.Instance;
 
@@ -90,7 +95,18 @@ namespace BadNorthMP.UI
 
             ModalOverlay popup = ModalOverlay.GetInstance();
             overlay = popup;
-            messageText = GameUi.InitPopup(popup, "Multiplayer " + Plugin.Version, BuildBody());
+            messageText = GameUi.InitPopup(popup, "Multiplayer " + Plugin.Version, "");
+            Text text = messageText;
+            float spacing = text ? text.lineSpacing : 1f;
+            bool rich = text && text.supportRichText;
+            if (text)
+            {
+                smallSize = Mathf.Max(8, Mathf.RoundToInt(text.fontSize * 0.8f));
+                gapSize = Mathf.Max(4, Mathf.RoundToInt(text.fontSize * 0.45f));
+                text.supportRichText = true;
+                text.lineSpacing = spacing * 1.12f;
+                text.text = BuildBody();
+            }
 
             // A newer version on GitHub can be installed from here at any time.
             if (Updater.Staged) AddButton("Install and restart", Updater.Install);
@@ -139,6 +155,12 @@ namespace BadNorthMP.UI
             popup.AddCancelButton();
             popup.SetCloseAction(() =>
             {
+                // The popup is the game's, pooled: its next use gets its own text settings back.
+                if (text)
+                {
+                    text.lineSpacing = spacing;
+                    text.supportRichText = rich;
+                }
                 if (overlay == popup)
                     overlay = null;
             });
@@ -193,16 +215,22 @@ namespace BadNorthMP.UI
                 else
                 {
                     sb.AppendLine("Friends' games:");
-                    foreach (FriendLobbies.Game game in FriendLobbies.Games) sb.AppendLine(FriendLobbies.Describe(game));
+                    foreach (FriendLobbies.Game game in FriendLobbies.Games) sb.AppendLine(Plain(FriendLobbies.Describe(game)));
                 }
                 return sb.ToString();
             }
 
-            foreach (CSteamID member in Session.Members())
+            // Each player: their name, then their role and ping on a smaller, softer line (as one line it wrapped
+            // mid-way), with a little room between players.
+            List<CSteamID> members = Session.Members();
+            for (int i = 0; i < members.Count; i++)
             {
-                string role = Session.Members().Count > 1 ? Roles.RoleOf(member) : "Waiting for a friend";
+                CSteamID member = members[i];
+                string role = members.Count > 1 ? Roles.RoleOf(member).Replace(" (", "  ·  ").Replace(")", "") : "Waiting for a friend";
                 string ping = member == Session.Me ? "you" : Game.PingText(member);
-                sb.AppendLine($"{SteamSession.NameOf(member)}  -  {role}  ({ping})");
+                if (i > 0) sb.AppendLine(Gap());
+                sb.AppendLine(Plain(SteamSession.NameOf(member)));
+                sb.AppendLine(Quiet($"{role}  ·  {ping}"));
             }
             sb.AppendLine();
             if (PartyFlow.Active && PartyFlow.State.phase < 3 && Updater.Compatible)
@@ -210,7 +238,7 @@ namespace BadNorthMP.UI
                 sb.AppendLine(PartyFlow.Status).AppendLine();
                 foreach (var seat in PartyFlow.State.seats)
                 {
-                    sb.Append(SteamSession.NameOf(new CSteamID(seat.player))).Append(": ");
+                    sb.Append(Plain(SteamSession.NameOf(new CSteamID(seat.player)))).Append(": ");
                     for (int i = 0; i < seat.choices.Length; i++)
                     { if (i > 0) sb.Append(" + "); sb.Append(PartyFlow.ChoiceName(seat.choices[i])); }
                     sb.AppendLine(seat.ready ? "  (Ready)" : "  (Choosing)");
@@ -248,9 +276,18 @@ namespace BadNorthMP.UI
             {
                 // Role announcements describe past states; the player list above is authoritative.
                 if (line == "You are the mastermind." || line.StartsWith("You defend.")) continue;
-                sb.AppendLine().Append(line);
+                sb.AppendLine().Append(Quiet(Plain(line)));
             }
             return sb.ToString();
         }
+
+        /// <summary>Smaller, softer text: the line under a name, a passing event.</summary>
+        private static string Quiet(string text) => $"<size={smallSize}><color={Soft}>{text}</color></size>";
+
+        /// <summary>An empty half line: a little room between players.</summary>
+        private static string Gap() => $"<size={gapSize}> </size>";
+
+        /// <summary>Players' own text (Steam names) shown as written: a '&lt;' in it can't start markup.</summary>
+        private static string Plain(string text) => string.IsNullOrEmpty(text) ? text : text.Replace("<", "\u2039").Replace(">", "\u203A");
     }
 }

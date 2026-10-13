@@ -80,6 +80,8 @@ namespace BadNorthMP.UI
                 ModLog.Warn("Native commander card is unavailable; selection remains unconfirmed.");
                 return null;
             }
+            // The arrow tabs' slid-out sizes, read off the game's card before it's copied (see CardTabs).
+            var slidOut = CardTabs.SlidOutSizes(template.transform);
             var holder = new GameObject("Commander Card", typeof(RectTransform));
             holder.transform.SetParent(parent, false); holder.SetActive(false);
             var element = holder.AddComponent<LayoutElement>(); element.preferredWidth = cardWidth; element.preferredHeight = 420;
@@ -178,6 +180,8 @@ namespace BadNorthMP.UI
                 if (!shownName) ModLog.Warn($"Commander card: no {(item ? "item" : "trait")} name label found; its name won't update");
                 Show(shown, definition);
             }
+            // The player's own card: its arrow tabs move as on the game's new-game cards (the animator is about to go).
+            if (cycle != null) CardTabs.Attach(holder, clone, slidOut);
             var deluxe = Traverse.Create(clone.GetComponent(type)).Field<BoolWidget>("deluxeDLCWidget").Value;
             if (deluxe) deluxe.gameObject.SetActive(false);
             foreach (var script in clone.GetComponentsInChildren<MonoBehaviour>(true))
