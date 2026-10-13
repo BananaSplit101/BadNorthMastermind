@@ -34,11 +34,6 @@ namespace BadNorthMP.Net
                 if (upgrade.name == name && Valid(upgrade, trait)) return upgrade;
             throw new IOException("Starting upgrade is missing: " + name);
         }
-        public static string Label(string name, bool trait)
-        {
-            var upgrade = Resolve(name, trait);
-            return upgrade ? upgrade.dbgName : trait ? "No Trait" : "No Item";
-        }
         public static void PreparePreview(HeroDefinition hero, string trait, string item)
         {
             // Native SetupHeroState fires OnPurchased, including resurrection effects. Previews only carry definitions.

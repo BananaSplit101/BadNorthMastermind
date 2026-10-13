@@ -1,20 +1,17 @@
 using System;
 using System.Collections.Generic;
-using Steamworks;
 using UnityEngine;
 using Voxels.TowerDefense;
 
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Choosing who goes, once an island has loaded for everyone: the leader shares out the squads
-    /// (PartyFlow.PlanDeployment), each defender picks which of their commanders go and presses Ready (UI.DeployPanel),
-    /// and when everyone is ready the leader lands them. A player who leaves is skipped; after Timeout the leader lands
-    /// everyone's current picks, so one stuck player can't hold the party forever.
+    /// Once an island has loaded, each defender picks which of their commanders go; the leader lands them when everyone
+    /// is ready, skipping players who left, or after Timeout so one stuck player can't hold the party forever.
     /// </summary>
     internal static class DeployFlow
     {
-        public const float Timeout = 120f;
+        public const float Timeout = 120f; // seconds
 
         /// <summary>The deployment being chosen (or the last one), as the leader last said.</summary>
         public static PartyDeployment Current { get; private set; }
@@ -75,7 +72,7 @@ namespace BadNorthMP.Net
             return true;
         }
 
-        /// <summary>Every frame (MultiplayerGame). The leader lands the squads once everyone is ready.</summary>
+        /// <summary>Every frame (MultiplayerGame).</summary>
         public static void Update()
         {
             if (!Roles.IsDefender || manager == null || Current == null || Current.done) return;

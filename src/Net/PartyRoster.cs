@@ -7,11 +7,11 @@ namespace BadNorthMP.Net
     internal sealed class DefenderSeat
     {
         public ulong player;
-        // heroes, choices, traits and items are the drafted starting slots, one entry each (none for a player who
-        // joined mid-campaign). A starting commander handed to someone else leaves its slot at -1.
+        // The drafted starting slots, one entry each (none for a player who joined mid-campaign). A starting
+        // commander handed to someone else leaves its heroes slot at -1.
         public int[] choices, heroes;
         public string[] traits, items;
-        // Commanders rescued during the campaign, beyond the starting slots.
+        // Commanders rescued during the campaign.
         public List<int> recruits = new List<int>();
         public bool ready;
     }
@@ -26,8 +26,7 @@ namespace BadNorthMP.Net
         public ulong authority;
         // The seat that receives the next rescued commander: the leader first, then the others in seat order.
         public int nextRecruit;
-        /// <summary>The multiplayer save being continued (picker slot 0..4), or -1 for a new campaign. Continuing, the
-        /// commanders come from the save, so the draft only asks for Ready.</summary>
+        // The multiplayer save being continued (picker slot 0..4; its commanders come from the save), or -1 for a new campaign.
         public int continuing = -1;
         public bool Continuing => continuing >= 0;
         public const int MaxHeroes = 10;
@@ -64,8 +63,8 @@ namespace BadNorthMP.Net
             return null;
         }
         /// <summary>
-        /// Give a rescued commander to the next connected player in turn: the leader, then the other defenders in
-        /// seat (lobby join) order. A commander already owned by a connected player keeps its owner.
+        /// Give a rescued commander to the next connected player in seat (lobby join) order, the leader first. A
+        /// commander already owned by a connected player keeps its owner.
         /// </summary>
         public DefenderSeat AssignRecruit(int hero, Func<ulong, bool> connected)
         {
@@ -91,11 +90,9 @@ namespace BadNorthMP.Net
             return owner;
         }
         /// <summary>
-        /// A player who joined after the draft takes a seat in the running campaign (at most 4 seats). Whoever commands
-        /// the most commanders, if that's two or more, hands one over (on a tie, the later seat, so the leader keeps
-        /// theirs longest): one that can fight next if they have one, a rescued commander before a starting one, the
-        /// most recently gained first. Returns the new seat (null: no room, or already seated), with the commander
-        /// handed over and who had it (-1 and null when nobody had one to spare).
+        /// Seat a player who joined after the draft (at most 4 seats; null: no room, or already seated). Whoever has
+        /// the most commanders, two or more, hands one over (a tie: the later seat, so the leader keeps theirs
+        /// longest): one that can fight next if possible, rescued before starting, most recently gained first.
         /// </summary>
         public DefenderSeat SeatLateJoiner(ulong player, Func<int, bool> available, out int hero, out DefenderSeat donor)
         {
@@ -217,7 +214,7 @@ namespace BadNorthMP.Net
                 for (int i = 0; i < slots; i++)
                 {
                     seat.choices[i] = r.ReadInt32(); seat.heroes[i] = r.ReadInt32();
-                    if (seat.choices[i] < 0 || seat.choices[i] >= ChoiceCount || seat.heroes[i] < -1 || seat.heroes[i] > 9 ||
+                    if (seat.choices[i] < 0 || seat.choices[i] >= ChoiceCount || seat.heroes[i] < -1 || seat.heroes[i] >= MaxHeroes ||
                         (seat.heroes[i] >= 0 && !heroes.Add(seat.heroes[i]))) throw new IOException("Invalid squad assignment");
                 }
                 result.seats.Add(seat);
