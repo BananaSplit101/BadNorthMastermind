@@ -5,10 +5,9 @@ using UnityEngine;
 namespace BadNorthMP
 {
     /// <summary>
-    /// The game's own errors in LogOutput.log. BepInEx leaves Unity's messages out of the file by default
-    /// ([Logging.Disk] WriteUnityLog), so an exception that stopped an island loading never showed in the log players
-    /// send. They go straight into the file, as BepInEx writes them (the console shows them already), each distinct one
-    /// once, with its stack trace, and only the first few dozen.
+    /// The game's own errors in LogOutput.log: BepInEx leaves Unity's messages out of the file by default
+    /// ([Logging.Disk] WriteUnityLog), so an exception that stopped an island loading never showed in the logs players
+    /// send. Written straight to the file (the console has them already), each distinct one once, up to Limit.
     /// </summary>
     internal static class GameErrors
     {

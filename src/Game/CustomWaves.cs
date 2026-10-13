@@ -21,15 +21,12 @@ namespace BadNorthMP.Game
         private static readonly List<Wave> sent = new List<Wave>();
         private static Wave placeholder;
 
-        public static int WavesSent => sent.Count;
-
         /// <summary>Every ship sent so far has dropped off its whole crew.</summary>
         public static bool AllLanded => sent.TrueForAll(w => !w || w.haveAllSpawned);
 
         /// <summary>
-        /// Swap the generated raid for a single placeholder wave that never launches. The game's raid logic
-        /// needs at least one wave (Raid.AllWavesSpawned reads waves.Last()), and since the placeholder never
-        /// spawns, the island can't be "won" until our own end condition says so.
+        /// Swap the generated raid for a placeholder wave that never launches: the raid logic needs at least one wave
+        /// (Raid.AllWavesSpawned reads waves.Last()), and as it never spawns, the island is only won by our own end condition.
         /// </summary>
         public static void ReplaceRaid(Raid raid)
         {
@@ -70,17 +67,15 @@ namespace BadNorthMP.Game
 
         /// <summary>Build and launch a wave at the given beach. Units are split over ships by deck space.</summary>
         public static bool TryLaunch(Island island, int beachIndex, List<KeyValuePair<VikingReference, int>> units, out string error, out int unitCount) =>
-            TryLaunch(island, beachIndex, units, out error, out unitCount, out Wave ignored);
+            TryLaunch(island, beachIndex, units, EconomyConfig.MaxShipsPerWave, out error, out unitCount, out _);
 
-        /// <summary>As above; <paramref name="launched"/> is the new wave, whose one ship group is one Viking squad.</summary>
-        public static bool TryLaunch(Island island, int beachIndex, List<KeyValuePair<VikingReference, int>> units, out string error, out int unitCount, out Wave launched) =>
-            TryLaunch(island, beachIndex, units, EconomyConfig.MaxShipsPerWave, out error, out unitCount, out launched);
-
-        /// <summary>As above, with its own ship limit (commanders may use more ships than a wave).</summary>
+        /// <summary>
+        /// As above, with its own ship limit (commanders may use more ships than a wave); <paramref name="launched"/> is
+        /// the new wave, whose one ship group is one Viking squad.
+        /// </summary>
         public static bool TryLaunch(Island island, int beachIndex, List<KeyValuePair<VikingReference, int>> units, int maxShips, out string error, out int unitCount, out Wave launched)
         {
             launched = null;
-            error = null;
             unitCount = units.Sum(u => u.Value);
             if (!CanLaunch(out error)) return false;
             Raid raid = island.raid;
@@ -173,7 +168,6 @@ namespace BadNorthMP.Game
                     // Natively every ship becomes a boat to flee on once it has landed and emptied.
                     Evacuation.AddShip(raid, ship);
                 }
-
             }
             catch (System.Exception e)
             {
@@ -186,8 +180,7 @@ namespace BadNorthMP.Game
             // Before the placeholder, so the placeholder stays last.
             int insertAt = placeholder && raid.waves.Contains(placeholder) ? raid.waves.IndexOf(placeholder) : raid.waves.Count;
             raid.waves.Insert(insertAt, wave);
-            // Execute the initial launch step here so exceptions cannot become
-            // a false success reply from an unobserved Unity coroutine.
+            // The first launch step runs here, so its exceptions can't hide in an unobserved coroutine behind a success reply.
             var launch = wave.BeginWave();
             try
             {

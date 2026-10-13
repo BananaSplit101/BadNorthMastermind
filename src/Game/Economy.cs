@@ -6,10 +6,9 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Game
 {
     /// <summary>
-    /// Leader side (authoritative): the mastermind's army on the current island. Like the base game's raid, the
-    /// island has a fixed number of waves that sail on a timer (WaveSchedule). The mastermind plans each wave from
-    /// that wave's budget; when the timer runs out the plan sails, or a random wave if nothing was planned.
-    /// Battle results and an end-of-island payout go to the war chest (MastermindSession), which pays for upgrades.
+    /// Leader side (authoritative): the mastermind's army on the current island. Like the native raid, a fixed number of
+    /// waves sail on a timer (WaveSchedule), each the mastermind's plan from its budget, or a random wave if none.
+    /// Battle results and an end-of-island payout go to the war chest (MastermindSession).
     /// </summary>
     internal static class Economy
     {
@@ -28,7 +27,7 @@ namespace BadNorthMP.Game
             public float Cost => units.Sum(p => (float)UnitCost(p.Key) * p.Value);
         }
 
-        /// <summary>The planned wave: its landings (each with its own beach), empty when nothing is planned.</summary>
+        /// <summary>The planned wave's landings; empty when nothing is planned.</summary>
         public static readonly List<PlanLanding> Plan = new List<PlanLanding>();
         public static int PlanTile => Plan.Count > 0 ? Plan[0].tile : -1;
         public static float PlanCost => Plan.Sum(l => l.Cost);
@@ -129,10 +128,9 @@ namespace BadNorthMP.Game
         }
 
         /// <summary>
-        /// A retry is reloading the island: its waves begin again as it plays (MastermindRaidPatch, through Begin). The
+        /// A retry is reloading the island; its waves begin again as it plays (MastermindRaidPatch, through Begin). The
         /// island stays "playing" through the reload, so without this the leader's catch-up (MastermindNet.Update) began
-        /// them on the old island first, with its fight still running: the timer counted on through the reload and the
-        /// party's choice of commanders, and the waves sailed before anyone had landed.
+        /// them on the old island, its timer running on through the reload and the waves sailing before anyone landed.
         /// </summary>
         public static bool ReplayPending { get; private set; }
 
@@ -140,9 +138,8 @@ namespace BadNorthMP.Game
         public static bool Started { get; private set; }
 
         /// <summary>
-        /// The fight is on: from the game's first-wave call until the island's end screen. The game's running state
-        /// itself isn't used after that: states above it switch while defenders play (it read "not running" mid-fight,
-        /// so the mastermind's timer stopped showing although the waves kept sailing).
+        /// From the game's first-wave call until the island's end screen. The game's running state isn't used after the
+        /// call: states above it switch while defenders play, so it read "not running" mid-fight.
         /// </summary>
         public static bool FightOn
         {
@@ -169,7 +166,7 @@ namespace BadNorthMP.Game
             // only a wave that comes due before their boats have landed waits for them.
             Clock += dt;
             if (Waves.Due(Clock) && !SailIn.Arriving)
-                Depart(out string ignored);
+                Depart(out _);
         }
 
         public static void ClearPlan() => Plan.Clear();
@@ -182,9 +179,8 @@ namespace BadNorthMP.Game
         }
 
         /// <summary>
-        /// The current wave sails when its timer runs out (there's no sending early): each planned landing at its
-        /// beach (or, if its ships don't fit there, another one), and only the landings that sailed are paid for. With
-        /// no plan, or when nothing could land, a random wave like the native raid's sails instead.
+        /// The current wave sails on its timer, never early: each planned landing at its beach (or another if its ships
+        /// don't fit there), paying only for those that sailed. With no plan, or nothing landed, a random wave sails.
         /// </summary>
         public static bool Depart(out string message)
         {
@@ -198,7 +194,7 @@ namespace BadNorthMP.Game
             foreach (PlanLanding landing in Plan)
             {
                 int planned = beaches.FindIndex(b => b.tileIndex == landing.tile);
-                if (!TryAtBeaches(Crew(landing.units), planned, beaches, false, out int count, out string where, out string error))
+                if (!TryAtBeaches(Crew(landing.units), planned, beaches, out int count, out string where, out string error))
                 {
                     ModLog.Problem("landing_failed", $"Mastermind: a planned landing of wave {wave} couldn't land anywhere: {error}");
                     continue;
@@ -208,7 +204,7 @@ namespace BadNorthMP.Game
                 places.Add($"{count} at the {where} beach");
             }
             bool launched = places.Count > 0;
-            if (!launched && DefaultWave(-1, beaches, out spent, out unitCount, out string randomBeach))
+            if (!launched && DefaultWave(beaches, out spent, out unitCount, out string randomBeach))
             {
                 launched = true;
                 places.Add($"{unitCount} at the {randomBeach} beach");
@@ -240,16 +236,15 @@ namespace BadNorthMP.Game
             paid.Select(p => new KeyValuePair<VikingReference, int>(p.Key,
                 MastermindUpgrades.CrewCount(p.Value, MastermindSession.UpgradeLevel(p.Key.type, UnitUpgrade.Count)))).ToList();
 
-        /// <summary>The preferred beach first; when sailing on the timer, then every other beach.</summary>
+        /// <summary>The preferred beach (if any) first, then every other beach in random order.</summary>
         private static bool TryAtBeaches(List<KeyValuePair<VikingReference, int>> crew, int preferred, List<BeachChoice> beaches,
-            bool onlyPreferred, out int unitCount, out string where, out string error)
+            out int unitCount, out string where, out string error)
         {
             unitCount = 0; where = null; error = "pick a beach to land at";
             var order = new List<int>();
             if (preferred >= 0) order.Add(preferred);
-            if (!onlyPreferred)
-                foreach (int i in Enumerable.Range(0, beaches.Count).OrderBy(i => random.Next()))
-                    if (i != preferred) order.Add(i);
+            foreach (int i in Enumerable.Range(0, beaches.Count).OrderBy(i => random.Next()))
+                if (i != preferred) order.Add(i);
             foreach (int beach in order)
                 if (CustomWaves.TryLaunch(island, beach, crew, out error, out unitCount))
                 {
@@ -260,7 +255,7 @@ namespace BadNorthMP.Game
         }
 
         /// <summary>No plan: one random affordable type with the whole budget, smaller if the ships can't fit it.</summary>
-        private static bool DefaultWave(int preferred, List<BeachChoice> beaches, out float spent, out int unitCount, out string where)
+        private static bool DefaultWave(List<BeachChoice> beaches, out float spent, out int unitCount, out string where)
         {
             spent = 0f; unitCount = 0; where = null;
             List<VikingReference> types = AvailableTypes(island).Where(t => UnitCost(t) <= Waves.Budget).ToList();
@@ -269,12 +264,11 @@ namespace BadNorthMP.Game
             for (int paid = (int)(Waves.Budget / UnitCost(type)); paid >= 1; paid = paid * 2 / 3)
             {
                 var plan = new List<KeyValuePair<VikingReference, int>> { new KeyValuePair<VikingReference, int>(type, paid) };
-                if (TryAtBeaches(Crew(plan), preferred, beaches, false, out unitCount, out where, out string ignored))
+                if (TryAtBeaches(Crew(plan), -1, beaches, out unitCount, out where, out _))
                 {
                     spent = paid * UnitCost(type);
                     return true;
                 }
-                if (paid == 1) break;
             }
             return false;
         }

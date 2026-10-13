@@ -1,9 +1,8 @@
 namespace BadNorthMP.Game
 {
     /// <summary>
-    /// What the mastermind keeps across islands of one multiplayer campaign: the war chest (gold for upgrades and
-    /// commanders) and Viking upgrade levels. Lives on the leader, who is authoritative, and is saved per campaign
-    /// by MastermindUpgradeSave. Wave budgets are separate and never carry between islands (Economy).
+    /// What the mastermind keeps across one multiplayer campaign's islands: the war chest, upgrade levels and commanders.
+    /// Lives on the (authoritative) leader, saved per campaign by MastermindUpgradeSave. Wave budgets never carry over.
     /// </summary>
     internal static class MastermindSession
     {
