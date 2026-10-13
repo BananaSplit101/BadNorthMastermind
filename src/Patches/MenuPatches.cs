@@ -14,7 +14,19 @@ namespace BadNorthMP.Patches
         private static void Postfix(MainMenu __instance) => MenuButtons.AddAfter(__instance, "UI/MAIN_MENU/PLAY");
     }
 
-    // The first Play: the error reports notice, then Play as usual.
+    // The error reports notice, the first time: on the title screen's Start (the button or a gamepad press), then the
+    // game carries on. Play and the Multiplayer button ask too, in case it couldn't show there.
+    [HarmonyPatch(typeof(AccountLoader), "PlatformReadyActivate")]
+    internal static class TitleStartPatch
+    {
+        private static bool Prefix(AccountLoader __instance, ref bool __result)
+        {
+            if (!ReportsUi.Ask(() => { if (__instance) Traverse.Create(__instance).Method("PlatformReadyActivate").GetValue(); })) return true;
+            __result = true;
+            return false;
+        }
+    }
+
     [HarmonyPatch(typeof(MainMenu), "Play")]
     internal static class MainMenuPlayPatch
     {

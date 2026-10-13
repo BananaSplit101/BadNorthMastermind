@@ -21,24 +21,33 @@ namespace BadNorthMP.UI
 
         /// <summary>
         /// The first time: the notice instead (true), and <paramref name="then"/> once the player has answered.
-        /// Afterwards false: carry on.
+        /// Afterwards false: carry on. If the popup can't open, false too: never in the way of the button pressed (the
+        /// next place that asks, Play or Multiplayer, shows it).
         /// </summary>
         public static bool Ask(Action then)
         {
             if (!NoticePending) return false;
             if (asking) return true;
-            asking = true;
-            ModalOverlay popup = ModalOverlay.GetInstance();
-            GameUi.InitPopup(popup, "Hey!", "By the way we collect error logs automatically. You can turn this off here or leave it on. Up to you!");
-            bool answered = false;
-            GameUi.AddPopupButton(popup, "Leave it on", () => { answered = true; Choose(true); }, closes: true);
-            GameUi.AddPopupButton(popup, "Turn off", () => { answered = true; Choose(false); }, closes: true);
-            popup.SetCloseAction(() =>
+            try
             {
-                asking = false;
-                if (answered && then != null) Later(then);
-            });
-            return true;
+                ModalOverlay popup = ModalOverlay.GetInstance();
+                GameUi.InitPopup(popup, "Hey!", "By the way we collect error logs automatically. You can turn this off here or leave it on. Up to you!");
+                bool answered = false;
+                GameUi.AddPopupButton(popup, "Leave it on", () => { answered = true; Choose(true); }, closes: true);
+                GameUi.AddPopupButton(popup, "Turn off", () => { answered = true; Choose(false); }, closes: true);
+                popup.SetCloseAction(() =>
+                {
+                    asking = false;
+                    if (answered && then != null) Later(then);
+                });
+                asking = true;
+                return true;
+            }
+            catch (Exception e)
+            {
+                ModLog.Warn("Couldn't show the error reports notice here: " + e.Message);
+                return false;
+            }
         }
 
         public static void Choose(bool send)
