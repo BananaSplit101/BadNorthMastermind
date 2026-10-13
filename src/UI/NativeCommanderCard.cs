@@ -53,7 +53,12 @@ namespace BadNorthMP.UI
             button.interactable = action != null;
             if (action != null)
             {
-                button.onClick.AddListener(() => { FabricWrapper.PostEvent(FabricID.settingChange); action(); });
+                button.onClick.AddListener(() =>
+                {
+                    if (!CardTabs.Out(arrow)) return; // its tab isn't out: hovering brings it, then it can be pressed
+                    FabricWrapper.PostEvent(FabricID.settingChange);
+                    action();
+                });
                 // The arrows are small: an invisible area around each takes its clicks too.
                 var hit = new GameObject("Hit area", typeof(RectTransform));
                 hit.transform.SetParent(arrow.transform, false);

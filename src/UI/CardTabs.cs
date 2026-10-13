@@ -139,9 +139,11 @@ namespace BadNorthMP.UI
             if (!canvas) canvas = GetComponentInParent<Canvas>();
             Camera eye = canvas && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
             Vector2 mouse = Input.mousePosition;
-            // As the game's: out while the card is under the mouse (always, playing by touch).
+            // As the game's: out while the card, a tab, or anywhere an arrow takes clicks is under the mouse (always,
+            // playing by touch). The card alone isn't enough: a slid-out tab reaches past it, so moving onto the arrows
+            // would slide them back in.
             bool want = (Profile.userSettings != null && Profile.userSettings.cursorBehaviour == UserSettings.CursorBehaviour.Touch) ||
-                (card && RectTransformUtility.RectangleContainsScreenPoint(card, mouse, eye));
+                Under(card, mouse, eye) || tabs.Exists(tab => Under(tab.expand, mouse, eye)) || Hotspots().Exists(spot => Under(spot, mouse, eye));
             if (want != open)
             {
                 open = want;
@@ -156,6 +158,39 @@ namespace BadNorthMP.UI
                 tab.down = Toward(tab.down, over && Input.GetMouseButton(0) ? 1f : 0f, dt);
             }
             Apply();
+        }
+
+        private static bool Under(RectTransform rect, Vector2 mouse, Camera eye) =>
+            rect && rect.gameObject.activeInHierarchy && RectTransformUtility.RectangleContainsScreenPoint(rect, mouse, eye);
+
+        private readonly List<RectTransform> hotspots = new List<RectTransform>();
+        private bool hotspotsFound;
+
+        /// <summary>
+        /// The arrows' buttons and their larger click areas (NativeCommanderCard.WireArrow adds them after the tabs are
+        /// set up, so they're looked for on first use).
+        /// </summary>
+        private List<RectTransform> Hotspots()
+        {
+            if (hotspotsFound || !card) return hotspots;
+            hotspotsFound = true;
+            foreach (UnityEngine.UI.Button button in card.GetComponentsInChildren<UnityEngine.UI.Button>(true))
+            {
+                hotspots.Add((RectTransform)button.transform);
+                foreach (Transform child in button.transform)
+                    if (child.name == "Hit area") hotspots.Add((RectTransform)child);
+            }
+            return hotspots;
+        }
+
+        /// <summary>
+        /// Whether the tabs holding <paramref name="part"/> are out far enough to press: an arrow can't be clicked while its
+        /// tab is tucked away. True for a card without animated tabs.
+        /// </summary>
+        public static bool Out(GameObject part)
+        {
+            var animated = part ? part.GetComponentInParent<CardTabs>() : null;
+            return !animated || animated.expanded >= 0.5f;
         }
 
         private void Apply()
