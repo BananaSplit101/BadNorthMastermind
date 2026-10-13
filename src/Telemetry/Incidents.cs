@@ -69,6 +69,7 @@ namespace BadNorthMP.Telemetry
         public static string ReportBug(string description)
         {
             description = (description ?? "").Trim();
+            if (!Reports.Collecting) return ReportBugAlone(description);
             string id = Raise("bug_report", description.Length > 0 ? description : "Bug report", true,
                 new Dictionary<string, object> { ["description"] = description });
             if (id == null) return null;
@@ -76,6 +77,28 @@ namespace BadNorthMP.Telemetry
             props["incident_id"] = id;
             props["description"] = description;
             Reports.Event("bug_report", props);
+            DiscordBugReports.Send(id, description);
+            return id;
+        }
+
+        /// <summary>
+        /// A bug report while error reports are off: the player asked for this one to go, so it does at once, with their
+        /// recent log; nothing else is kept or sent. The lobby still hears of it (members with reports on send theirs).
+        /// </summary>
+        private static string ReportBugAlone(string description)
+        {
+            string id = Rules.Decide(true, Time.unscaledTime, random, out _);
+            if (id == null) return null;
+            known.Add(id);
+            var props = GameContext.Snapshot();
+            props["incident_id"] = id;
+            props["description"] = description;
+            props["reports_off"] = true;
+            Reports.SendNow("bug_report", props);
+            List<string> lines = Reports.RecentLines(0, out _);
+            if (lines.Count > 0) Reports.SendNow("incident_log", LogProperties(id, lines, false));
+            Tell(id, "bug_report", description);
+            ModLog.Info($"Bug report {id} sent (error reports are off: only this report goes)");
             DiscordBugReports.Send(id, description);
             return id;
         }
@@ -128,7 +151,12 @@ namespace BadNorthMP.Telemetry
         {
             List<string> lines = Reports.RecentLines(incident.sentUpTo, out long last);
             incident.sentUpTo = last;
-            if (lines.Count == 0) return;
+            if (lines.Count > 0) Reports.Event("incident_log", LogProperties(incident.id, lines, aftermath));
+        }
+
+        /// <summary>An incident_log event's properties: the newest of <paramref name="lines"/> that fit in LogBytes.</summary>
+        private static Dictionary<string, object> LogProperties(string id, List<string> lines, bool aftermath)
+        {
             var kept = new List<string>();
             int bytes = 0, left = 0;
             for (int i = lines.Count - 1; i >= 0; i--)
@@ -138,14 +166,14 @@ namespace BadNorthMP.Telemetry
                 kept.Add(lines[i]);
             }
             kept.Reverse();
-            Reports.Event("incident_log", new Dictionary<string, object>
+            return new Dictionary<string, object>
             {
-                ["incident_id"] = incident.id,
+                ["incident_id"] = id,
                 ["aftermath"] = aftermath,
                 ["lines"] = kept.Count,
                 ["lines_left_out"] = left,
                 ["log"] = string.Join("\n", kept.ToArray()),
-            });
+            };
         }
 
         /// <summary>Main thread, every frame: aftermaths sent, finished incidents untagged.</summary>

@@ -45,6 +45,7 @@ namespace BadNorthMP.Telemetry
         private static volatile string lineTag = "solo|menu||";
         private static readonly object ringGate = new object();
         private static readonly List<KeyValuePair<long, string>> ring = new List<KeyValuePair<long, string>>();
+        private static long ringSeq; // under ringGate
         private static readonly List<string> earlier = new List<string>();
         private static readonly Dictionary<string, float> lastProblem = new Dictionary<string, float>();
         private static bool killed, flagsAsked, flushSoon;
@@ -205,18 +206,18 @@ namespace BadNorthMP.Telemetry
         /// <summary>A log line (any thread): kept in the spool and among the recent lines an incident sends.</summary>
         public static void Record(int severity, string source, string text)
         {
-            if (recording || !Collecting) return;
+            if (recording || spool == null) return;
             recording = true;
             try
             {
                 if (text != null && text.Length > MaxLine) text = text.Substring(0, MaxLine) + " ... (cut short)";
                 var record = new SpoolRecord { unixMs = NowMs(), severity = severity, source = source ?? "", context = lineTag, incidents = Incidents.Tags, text = text ?? "" };
-                long seq = spool.Append(record, severity >= 17);
-                if (seq <= 0) return;
+                // Reports off: the line is only kept in memory, for a bug report the player sends themselves.
+                if (Collecting) spool.Append(record, severity >= 17);
                 string readable = SpoolFile.Readable(record);
                 lock (ringGate)
                 {
-                    ring.Add(new KeyValuePair<long, string>(seq, readable));
+                    ring.Add(new KeyValuePair<long, string>(++ringSeq, readable));
                     if (ring.Count > RingSize) ring.RemoveRange(0, ring.Count - RingSize);
                 }
             }
@@ -241,20 +242,42 @@ namespace BadNorthMP.Telemetry
             if (!Collecting) return;
             try
             {
-                var props = properties ?? new Dictionary<string, object>();
-                props["session_id"] = SessionId;
-                props["version"] = Plugin.Version;
-                props["channel"] = ReleaseChannel.Name;
-                string[] parts = lineTag.Split('|');
-                props["role"] = parts.Length > 0 ? parts[0] : "";
-                props["phase"] = parts.Length > 1 ? parts[1] : "";
-                if (parts.Length > 2 && parts[2].Length > 0) props["lobby"] = parts[2];
-                if (parts.Length > 3 && parts[3].Length > 0) props["level_index"] = parts[3];
-                string json = Payloads.Event(name, InstallId, Guid.NewGuid(), DateTime.UtcNow, props);
+                string json = Payloads.Event(name, InstallId, Guid.NewGuid(), DateTime.UtcNow, WithContext(properties));
                 spool.Append(new SpoolRecord { isEvent = true, unixMs = NowMs(), json = json }, true);
                 if (name == "$exception" || name.StartsWith("incident") || name == "bug_report") flushSoon = true;
             }
             catch (Exception e) { Debug.LogWarning("[Bad North Multiplayer] Couldn't record " + name + ": " + e.Message); }
+        }
+
+        /// <summary>Who and where this player is, added to an event's properties.</summary>
+        private static Dictionary<string, object> WithContext(Dictionary<string, object> properties)
+        {
+            var props = properties ?? new Dictionary<string, object>();
+            props["session_id"] = SessionId;
+            props["version"] = Plugin.Version;
+            props["channel"] = ReleaseChannel.Name;
+            string[] parts = lineTag.Split('|');
+            props["role"] = parts.Length > 0 ? parts[0] : "";
+            props["phase"] = parts.Length > 1 ? parts[1] : "";
+            if (parts.Length > 2 && parts[2].Length > 0) props["lobby"] = parts[2];
+            if (parts.Length > 3 && parts[3].Length > 0) props["level_index"] = parts[3];
+            return props;
+        }
+
+        /// <summary>
+        /// An event sent at once, outside the spool, while error reports are off: a bug report the player sends themselves
+        /// (they asked for that one to go; nothing else is kept or sent). Main thread.
+        /// </summary>
+        public static void SendNow(string name, Dictionary<string, object> properties)
+        {
+            if (spool == null || killed || string.IsNullOrEmpty(Token) || !Instance) return;
+            try
+            {
+                string json = Scrub.CleanJson(Payloads.Event(name, InstallId, Guid.NewGuid(), DateTime.UtcNow, WithContext(properties)));
+                var records = new List<SpoolRecord> { new SpoolRecord { isEvent = true, json = json } };
+                Instance.StartCoroutine(new Send(Host + "/batch/", Payloads.Batch(Token, records), false).Run());
+            }
+            catch (Exception e) { Debug.LogWarning("[Bad North Multiplayer] Couldn't send " + name + ": " + e.Message); }
         }
 
         /// <summary>

@@ -61,32 +61,41 @@ namespace BadNorthMP.UI
         {
             if (Ask(() => OpenBugReport())) return true;
             ModalOverlay popup = ModalOverlay.GetInstance();
-            if (!Reports.Collecting)
-            {
-                GameUi.InitPopup(popup, "Report bug", "Error reports are turned off, so a bug report can't be sent. " +
-                    "Turn them on in Settings (Error reports), or use Copy log in the pause menu and send the log yourself.");
-                popup.AddCancelButton();
-                return true;
-            }
-            GameUi.InitPopup(popup, "Report bug", "What happened? Your log goes with it, and everyone in your lobby sends theirs too.");
+            // A bug report always takes the player's log, error reports on or off: sending it is their choice.
+            Text message = GameUi.InitPopup(popup, "Report bug", "What happened? Write a short description of the bug. Your log goes with it" +
+                (Reports.Collecting ? ", and everyone in your lobby sends theirs too." : " (error reports are off, so only this report is sent)."));
             InputField field = Traverse.Create(popup).Field<InputField>("inputField").Value;
+            Text placeholder = field ? field.placeholder as Text : null;
             if (field)
             {
                 field.gameObject.SetActive(true);
                 field.text = "";
                 field.characterLimit = 500;
-                if (field.placeholder is Text placeholder) placeholder.text = "Type here (optional)";
+                if (placeholder) placeholder.text = "Describe what happened";
                 field.Select();
                 field.ActivateInputField();
             }
             GameUi.AddPopupButton(popup, "Send", () =>
             {
-                string text = field ? field.text : "";
+                string text = field ? field.text.Trim() : "";
+                // Nothing to go on without a description: ask again (unless the game's text box is missing).
+                if (field && text.Length < MinDescription)
+                {
+                    FabricWrapper.PostEvent(FabricID.uiError);
+                    if (placeholder) placeholder.text = "Write a short description first";
+                    if (message) message.text = "Please write a few words about what happened, then press Send.";
+                    field.Select();
+                    field.ActivateInputField();
+                    return;
+                }
+                popup.Dismiss();
                 Later(() => Sent(Incidents.ReportBug(text)));
-            }, closes: true);
+            });
             popup.AddCancelButton();
             return true;
         }
+
+        private const int MinDescription = 5;
 
         // The code is for the developer (it's in the report): the player only needs to know it went.
         private static void Sent(string code)

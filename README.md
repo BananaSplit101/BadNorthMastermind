@@ -30,7 +30,7 @@ The mod checks this repository's releases for a new version and updates itself:
 Everyone in a lobby must run the same version.
 
 ## Error reports
-To help fix bugs, the mod sends error logs to [PostHog](https://posthog.com) (US cloud). The first time you press Start, a popup tells you, with *Leave it on* and *Turn off*. You can change it later in the game's Settings (*Error reports*) or in `BepInEx/config/com.bananasplit.badnorthmp.cfg` (`[Diagnostics] Send error reports`). Turned off, nothing is sent, including anything kept from before.
+To help fix bugs, the mod sends error logs to [PostHog](https://posthog.com) (US cloud). The first time you press Start, a popup tells you, with *Leave it on* and *Turn off*. You can change it later in the game's Settings (*Error reports*) or in `BepInEx/config/com.bananasplit.badnorthmp.cfg` (`[Diagnostics] Send error reports`). Turned off, nothing is sent (anything kept from before included), except a bug report you send yourself: its description and your recent log.
 
 **What's sent:**
 - the session's log lines (the mod's, other mods', the game's);

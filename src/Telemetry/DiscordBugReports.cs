@@ -36,7 +36,8 @@ namespace BadNorthMP.Telemetry
 
         public static void Send(string code, string description)
         {
-            if (!Reports.Sending || Webhook.Length == 0 || !Reports.Instance) return;
+            // Only ever a bug report the player sends themselves: it goes whether error reports are on or off.
+            if (Webhook.Length == 0 || !Reports.Instance) return;
             var post = new Post(code, description ?? "", Reports.Tag, Reports.RecentLines(0, out _));
             // Cleaning the log of names is slow with a long friends list: off the main thread.
             ThreadPool.QueueUserWorkItem(_ => post.Prepare());
