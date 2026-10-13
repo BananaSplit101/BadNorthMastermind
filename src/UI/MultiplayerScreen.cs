@@ -141,10 +141,6 @@ namespace BadNorthMP.UI
                 AddButton("Leave lobby", Session.Leave);
             }
 
-            // Error reports: a bug report from anywhere; the switch outside a lobby, where there's room.
-            AddButton("Report bug", () => ReportsUi.OpenBugReport());
-            if (!Session.InLobby) AddButton(ReportsUi.SwitchLabel, ReportsUi.Switch);
-
             popup.AddCancelButton();
             popup.SetCloseAction(() =>
             {
@@ -163,7 +159,7 @@ namespace BadNorthMP.UI
         {
             if (!Session.Ready)
                 return "wait";
-            string update = $"{Updater.UpdateAvailable}/{Updater.Busy}/{Updater.Staged}/{ModConfig.SendReports.Value}/";
+            string update = $"{Updater.UpdateAvailable}/{Updater.Busy}/{Updater.Staged}/";
             if (Session.InLobby && !Updater.Compatible)
                 return update + "mismatch";
             if (SpectatorSession.Active)

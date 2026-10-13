@@ -8,7 +8,7 @@ using Voxels.TowerDefense.UI;
 
 namespace BadNorthMP.UI
 {
-    /// <summary>Error reports in the game's own popups: the one-time notice, the on/off switch, and Report bug.</summary>
+    /// <summary>Error reports in the game's own popups: the one-time notice (on the title screen's Start) and Report bug.</summary>
     internal static class ReportsUi
     {
         private static bool asking;
@@ -54,10 +54,6 @@ namespace BadNorthMP.UI
             ModLog.Info(send ? "Error reports: on" : "Error reports: off (nothing is sent)");
         }
 
-        public static string SwitchLabel => "Error reports: " + (ModConfig.SendReports.Value ? "On" : "Off");
-
-        public static void Switch() => Choose(!ModConfig.SendReports.Value);
-
         // ---- Report bug ----------------------------------------------------------------------------------------------
 
         /// <summary>What happened, in the player's words, sent with everyone in the lobby's logs.</summary>
@@ -68,7 +64,7 @@ namespace BadNorthMP.UI
             if (!Reports.Collecting)
             {
                 GameUi.InitPopup(popup, "Report bug", "Error reports are turned off, so a bug report can't be sent. " +
-                    "Turn them on in the Multiplayer screen (Error reports: Off), or use Copy log in the pause menu and send the log yourself.");
+                    "Turn them on in Settings (Error reports), or use Copy log in the pause menu and send the log yourself.");
                 popup.AddCancelButton();
                 return true;
             }
@@ -92,18 +88,12 @@ namespace BadNorthMP.UI
             return true;
         }
 
+        // The code is for the developer (it's in the report): the player only needs to know it went.
         private static void Sent(string code)
         {
             ModalOverlay popup = ModalOverlay.GetInstance();
-            if (code == null)
-            {
-                GameUi.InitPopup(popup, "Report bug", "You've just sent one: wait a few seconds and try again.");
-            }
-            else
-            {
-                try { GUIUtility.systemCopyBuffer = code; } catch (Exception) { }
-                GameUi.InitPopup(popup, "Bug report sent", $"Your code is {code} (copied to your clipboard). Tell the developer this code.");
-            }
+            if (code == null) GameUi.InitPopup(popup, "Report bug", "You've just sent one: wait a few seconds and try again.");
+            else GameUi.InitPopup(popup, "Bug report sent", "Thanks! Your bug report was sent.");
             GameUi.AddPopupButton(popup, "OK", () => { }, closes: true);
         }
 

@@ -30,7 +30,7 @@ The mod checks this repository's releases for a new version and updates itself:
 Everyone in a lobby must run the same version.
 
 ## Error reports
-To help fix bugs, the mod sends error logs to [PostHog](https://posthog.com) (US cloud). The first time you press Play, a popup tells you, with *Leave it on* and *Turn off*. You can change it later on the Multiplayer screen (*Error reports: On/Off*) or in `BepInEx/config/com.bananasplit.badnorthmp.cfg` (`[Diagnostics] Send error reports`). Turned off, nothing is sent, including anything kept from before.
+To help fix bugs, the mod sends error logs to [PostHog](https://posthog.com) (US cloud). The first time you press Start, a popup tells you, with *Leave it on* and *Turn off*. You can change it later in the game's Settings (*Error reports*) or in `BepInEx/config/com.bananasplit.badnorthmp.cfg` (`[Diagnostics] Send error reports`). Turned off, nothing is sent, including anything kept from before.
 
 **What's sent:**
 - the session's log lines (the mod's, other mods', the game's);
@@ -39,7 +39,7 @@ To help fix bugs, the mod sends error logs to [PostHog](https://posthog.com) (US
 - the mod version, the game and BepInEx versions, the installed mods, your OS, CPU, GPU and memory;
 - events like joining a lobby or starting an island.
 
-When something goes wrong, it becomes an *incident*: everyone in the lobby sends their recent log under one code, so every side of a multiplayer bug is there. **Report bug** (pause menu and Multiplayer screen) does the same with your description and gives you the code.
+When something goes wrong, it becomes an *incident*: everyone in the lobby sends their recent log under one code, so every side of a multiplayer bug is there. **Report bug** in the pause menu does the same, with your description.
 
 **What's never sent:** Steam names and Steam IDs (each player becomes a label like `player-3f9a2c`), and your Windows user name. Reports are tied to a random install id, not your Steam account. Logs wait in `BepInEx/BadNorthMP-logs/` until they're sent, so a crash's last lines go at the next launch.
 
