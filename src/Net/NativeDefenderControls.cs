@@ -88,10 +88,7 @@ namespace BadNorthMP.Net
             }
         }
 
-        /// <summary>
-        /// Remote defender: what the game does locally for a move (SquadMover.MoveTo), while the leader carries
-        /// it out. The squad is shown on its new tile at once; a refusal puts it back.
-        /// </summary>
+        /// <summary>Remote defender: the local side of a move (as SquadMover.MoveTo); a refusal puts the squad back.</summary>
         public static void MoveSent(EnglishSquad squad, NavSpot target, bool deselect)
         {
             if (squad.squadTemplate) FabricWrapper.PostEvent(squad.squadTemplate.moveSound);
@@ -158,14 +155,14 @@ namespace BadNorthMP.Net
             RestoreTiles();
         }
 
-        public static bool Send(ActiveAbility ability, byte kind, int target)
+        public static void Send(ActiveAbility ability, byte kind, int target)
         {
             var squad = ability.squad;
             if (!Roles.IsRemoteDefender || !PartyFlow.Deployed || !PartyFlow.CanSelect(squad) ||
                 !Spectator.SpectatorSession.IslandReady())
             {
                 ModLog.Info("Ability order not sent: " + ability.GetType().Name + " isn't usable on this squad now");
-                return false;
+                return;
             }
             var island = GameAccess.CurrentIsland;
             SteamSession.Instance.Send(Roles.DefenderId, Packet.Build(MsgType.DefenderAction, w =>
@@ -175,13 +172,11 @@ namespace BadNorthMP.Net
                 w.Write(ability.GetType().FullName); w.Write(kind); w.Write(target);
             }));
             RemoteDefender.OrderSent(ability.GetType().Name + " " + squad.hero.dbgName + " target " + target);
-            return true;
         }
 
         /// <summary>
-        /// Pike Charge registers each soldier as it is created, so natively its upgrade is applied before the squad
-        /// fills. A mirrored squad's soldiers already exist when its upgrades go on; register them now (the hero, created
-        /// first natively, stays out), or the ability counts no pikes ("All pikes are dead").
+        /// Pike Charge registers each soldier as it is created, but a mirrored squad's soldiers already exist when its
+        /// upgrades go on. Register them now (not the hero, as natively), or it counts none ("All pikes are dead").
         /// </summary>
         private static void RegisterPikes(EnglishSquad squad)
         {
@@ -197,14 +192,13 @@ namespace BadNorthMP.Net
         }
 
         /// <summary>
-        /// Pike Charge only works out whether its squad stands in formation while the squad is selected
-        /// (PikeChargeAbility.UpdateSquadSelected, which also redraws target tiles). The leader never selects a remote
-        /// player's squad, so the charge always read as "not in formation". The same check, without the drawing.
+        /// Pike Charge only checks its formation while the squad is selected (PikeChargeAbility.UpdateSquadSelected),
+        /// and the leader never selects a remote player's squad. The same check, without the target drawing.
         /// </summary>
         private static void RefreshPikeFormation(PikeChargeAbility pike)
         {
             var fields = Traverse.Create(pike);
-            List<PikeChargeComponent> inFormation = fields.Field<List<PikeChargeComponent>>("compoonentsInFormation").Value;
+            List<PikeChargeComponent> inFormation = fields.Field<List<PikeChargeComponent>>("compoonentsInFormation").Value; // the game's spelling
             if (inFormation == null || pike.components == null) return;
             inFormation.Clear();
             EnglishSquad squad = pike.squad;
@@ -291,7 +285,7 @@ namespace BadNorthMP.Net
             yield return AccessTools.Method(typeof(EvacuateAbility), "SelectLocation");
             yield return AccessTools.Method(typeof(InvulnerableAbility), "OnConfirmed");
         }
-        private static bool Prefix(ActiveAbility __instance, MethodBase __originalMethod, object[] __args)
+        private static bool Prefix(ActiveAbility __instance, object[] __args)
         {
             if (!Roles.IsRemoteDefender || !Spectator.SpectatorSession.Active) return true;
             if (__instance is NavSpotTargetableAbility)
@@ -328,7 +322,7 @@ namespace BadNorthMP.Net
         {
             if (!Roles.IsRemoteDefender || !Spectator.SpectatorSession.Active || HouseOccupants.Current.Count == 0 || __instance.locations == null) return;
             foreach (SquadReplenishLocation location in __instance.locations)
-                if (location && HouseOccupants.TakenFrom(location, __instance.squad, out int ignored)) location.SetHighlight(false);
+                if (location && HouseOccupants.TakenFrom(location, __instance.squad, out _)) location.SetHighlight(false);
         }
     }
 
@@ -339,9 +333,8 @@ namespace BadNorthMP.Net
         { if (Roles.IsRemoteDefender && Spectator.SpectatorSession.Active) __result = true; }
     }
 
-    // Mirrored ships have no local sailing/evacuation simulation. Use the real evacuation
-    // button, with the authority choosing the nearest available boat, just like healing.
-    // Whether a boat is free comes from the leader (SquadEvac).
+    // Mirrored ships don't sail here, so whether a boat is free comes from the leader (SquadEvac), and the leader
+    // picks the nearest one.
     [HarmonyPatch(typeof(EvacuateAbility), nameof(EvacuateAbility.IsAvailable))]
     internal static class RemoteNativeEvacAvailablePatch
     {
@@ -353,8 +346,8 @@ namespace BadNorthMP.Net
         }
     }
 
-    // Puppet boats can't be clicked (no colliders or local boat list), so a click while Evacuate is targeted
-    // would deselect the squad. Treat it as "flee to the nearest suitable boat".
+    // Puppet boats can't be clicked, so a click while Evacuate is targeted would deselect the squad. Treat it as
+    // "flee to the nearest suitable boat".
     [HarmonyPatch(typeof(EvacuateAbility), "HandleScreenSpaceClick")]
     internal static class RemoteNativeEvacClickPatch
     {

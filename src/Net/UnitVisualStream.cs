@@ -7,10 +7,10 @@ using Voxels.TowerDefense.SpriteMagic;
 
 namespace BadNorthMP.Net
 {
-    // Separate from the legacy transform stream, so old recordings remain readable.
-    // 25: node definition (id,index,parentIndex,name,pooledPrefab)
-    // 26: animator records; 27: node records; 28: agent visibility/health; 29: node removed.
-    // Frame datagrams carry every unit captured in one snapshot: float time, then until the end of the
+    // Each unit's child hierarchy, animators and sprites, alongside DefenderTracker's transform snapshots.
+    // 25: node definition (int agentId, ushort index, ushort parentIndex, string name, string pooledPrefab)
+    // 26: animator records; 27: node records; 28: agent visibility/health; 29: node removed (int agentId, ushort index).
+    // Frame datagrams (26-28) carry every unit captured in one snapshot: float time, then until the end of the
     // datagram: int agentId, ushort count, (ushort length, byte[] record)*.
     internal static class UnitVisualStream
     {
@@ -93,7 +93,7 @@ namespace BadNorthMP.Net
         private static readonly FrameBatch nodeBatch = new FrameBatch(NodeFrame);
         private static readonly FrameBatch animatorBatch = new FrameBatch(AnimatorFrame);
         private static readonly FrameBatch agentBatch = new FrameBatch(AgentFrame);
-        // Unchanged child poses are resent this often (plus a stagger) to recover lost datagrams.
+        // Unchanged child poses are resent this often (s, plus a stagger) to recover lost datagrams.
         private const float NodeRefresh = 1.5f;
 
         /// <summary>Send everything captured since the last flush; called once per snapshot.</summary>
@@ -143,15 +143,15 @@ namespace BadNorthMP.Net
         {
             private sealed class Node
             {
-                public ushort index, parent;
+                public ushort index;
                 public Transform transform;
                 public float refresh;
-                public bool gone;
                 public bool pooled;
                 public Animator[] animators;
                 public Renderer[] renderers;
                 public SpriteAnimator sprite;
                 public SpriteRenderer spriteRenderer;
+                // As last captured (Changed), which is what the node record carries.
                 public bool captured, active, detached, spriteEnabled;
                 public ushort capturedParent;
                 public Vector3 position, scale;
@@ -179,9 +179,8 @@ namespace BadNorthMP.Net
 
             public void Capture(int id, Agent agent, float time)
             {
-                // Walk every hierarchy, including inactive equipment and held pooled arrows/torches.
-                // Equipment can attach during an attack; discover it at a bounded rate rather
-                // than walking every unit's complete hierarchy on every snapshot.
+                // Walk the whole hierarchy (inactive equipment and held pooled arrows/torches too) ten times a second,
+                // not every snapshot: equipment can attach during an attack.
                 if (nodes.Count == 0 || time >= nextDiscovery)
                 { Discover(id, agent.transform, ushort.MaxValue); nextDiscovery = time + 0.1f; }
                 var frames = nodeFrames; frames.Clear();
@@ -196,32 +195,23 @@ namespace BadNorthMP.Net
                 {
                     Node node = activeNodes[nodeIndex];
                     Transform tr = node.transform;
-                    if (node.gone) continue;
                     bool detached = tr && tr != agent.transform && !tr.IsChildOf(agent.transform);
                     if (!tr || (detached && node.pooled))
                     {
-                        if (!node.gone)
-                        {
-                            node.gone = true;
-                            if (!ReferenceEquals(tr, null)) lookup.Remove(tr);
-                            BattleStream.Send(Packet.Build(NodeGone, w => { w.Write(id); w.Write(node.index); }), true);
-                            activeNodes.RemoveAt(nodeIndex);
-                            nodes[node.index] = null;
-                            foreach (Animator animator in node.animators) animatorParameters.Remove(animator);
-                            staleKeys.Clear();
-                            foreach (ulong key in parameters.Keys) if (key >> 40 == node.index) staleKeys.Add(key);
-                            foreach (ulong key in staleKeys) parameters.Remove(key);
-                            staleKeys.Clear();
-                            foreach (ulong key in layers.Keys) if (key >> 40 == node.index) staleKeys.Add(key);
-                            foreach (ulong key in staleKeys) layers.Remove(key);
-                        }
+                        if (!ReferenceEquals(tr, null)) lookup.Remove(tr);
+                        BattleStream.Send(Packet.Build(NodeGone, w => { w.Write(id); w.Write(node.index); }), true);
+                        activeNodes.RemoveAt(nodeIndex);
+                        nodes[node.index] = null;
+                        foreach (Animator animator in node.animators) animatorParameters.Remove(animator);
+                        Forget(parameters, node.index);
+                        Forget(layers, node.index);
                         continue;
                     }
                     ushort currentParent = tr.parent && lookup.TryGetValue(tr.parent, out Node parentNode) ? parentNode.index : ushort.MaxValue;
                     bool changed = Changed(node, tr, tr == agent.transform, detached, currentParent);
                     if (time >= node.refresh || changed)
                     {
-                        frames.Add(Record(w => WriteNode(w, node, tr, tr == agent.transform, detached, currentParent)));
+                        frames.Add(Record(w => WriteNode(w, node)));
                         // Unchanged poses are only resent to recover lost datagrams; spread those refreshes out.
                         node.refresh = time + NodeRefresh + (node.index % 8) * (NodeRefresh / 8f);
                     }
@@ -245,12 +235,20 @@ namespace BadNorthMP.Net
                 }
             }
 
+            /// <summary>Drops a removed node's animator history (keys carry the node index from bit 40 up).</summary>
+            private void Forget<T>(Dictionary<ulong, T> values, ushort index)
+            {
+                staleKeys.Clear();
+                foreach (ulong key in values.Keys) if (key >> 40 == index) staleKeys.Add(key);
+                foreach (ulong key in staleKeys) values.Remove(key);
+            }
+
             private void Discover(int id, Transform tr, ushort parent)
             {
                 if (!lookup.TryGetValue(tr, out Node node))
                 {
                     if (nodes.Count >= ushort.MaxValue) throw new IOException("Too many unit visual nodes");
-                    node = new Node { index = (ushort)nodes.Count, parent = parent, transform = tr,
+                    node = new Node { index = (ushort)nodes.Count, transform = tr,
                         animators = tr.GetComponents<Animator>(), renderers = tr.GetComponents<Renderer>(),
                         sprite = tr.GetComponent<SpriteAnimator>(), spriteRenderer = tr.GetComponent<SpriteRenderer>() };
                     nodes.Add(node); activeNodes.Add(node); lookup.Add(tr, node);
@@ -277,6 +275,7 @@ namespace BadNorthMP.Net
 
             private static bool Changed(Node n, Transform tr, bool root, bool detached, ushort parent)
             {
+                // The root's own position/rotation travel in DefenderTracker's snapshots.
                 Vector3 pos = root ? Vector3.zero : detached ? tr.position : tr.localPosition;
                 Quaternion rot = root ? Quaternion.identity : detached ? tr.rotation : tr.localRotation;
                 Vector3 scale = detached ? tr.lossyScale : tr.localScale;
@@ -307,54 +306,50 @@ namespace BadNorthMP.Net
                 return changed;
             }
 
-            private static void WriteNode(BinaryWriter w, Node node, Transform tr, bool root, bool detached, ushort parent)
+            /// <summary>The node as Changed just captured it.</summary>
+            private static void WriteNode(BinaryWriter w, Node node)
             {
-                // Root position/rotation are interpolated by the legacy transform stream.
-                Vector3 pos = root ? Vector3.zero : detached ? tr.position : tr.localPosition;
-                Quaternion rot = root ? Quaternion.identity : detached ? tr.rotation : tr.localRotation;
-                Vector3 scale = detached ? tr.lossyScale : tr.localScale;
-                SpriteAnimator sprite = node.sprite;
-                SpriteRenderer sr = node.spriteRenderer;
+                Vector3 pos = node.position, scale = node.scale;
+                Quaternion rot = node.rotation;
                 bool moved = pos.x != 0 || pos.y != 0 || pos.z != 0;
                 bool rotated = (short)(rot.x * 32767f) != 0 || (short)(rot.y * 32767f) != 0 || (short)(rot.z * 32767f) != 0 ||
                     (short)(rot.w * 32767f) != 32767;
                 bool scaled = scale.x != 1 || scale.y != 1 || scale.z != 1;
+                bool sprite = node.sprite, sr = node.spriteRenderer;
                 byte flags = 0;
-                if (tr.gameObject.activeSelf) flags |= NodeActive;
-                if (detached) flags |= NodeWorld;
+                if (node.active) flags |= NodeActive;
+                if (node.detached) flags |= NodeWorld;
                 if (moved) flags |= NodeMoved;
                 if (rotated) flags |= NodeRotated;
                 if (scaled) flags |= NodeScaled;
                 if (sprite) flags |= NodeSprite;
                 if (sr) flags |= NodeSpriteRenderer;
-                w.Write(node.index); w.Write(flags); w.Write(parent);
+                w.Write(node.index); w.Write(flags); w.Write(node.capturedParent);
                 if (moved) w.Write(pos);
                 if (rotated) w.WriteRotation(rot);
                 if (scaled) w.Write(scale);
-                Renderer[] renderers = node.renderers;
+                bool[] renderers = node.rendererStates;
                 w.Write((byte)renderers.Length);
                 for (int start = 0; start < renderers.Length; start += 8)
                 {
                     byte bits = 0;
                     for (int i = start; i < renderers.Length && i < start + 8; i++)
-                        if (renderers[i].enabled) bits |= (byte)(1 << (i - start));
+                        if (renderers[i]) bits |= (byte)(1 << (i - start));
                     w.Write(bits);
                 }
                 if (sprite)
                 {
-                    Color color = sprite.color;
-                    bool floats = NeedsFloats(color);
-                    w.Write((byte)((sprite.enabled ? SpriteEnabled : 0) | (floats ? SpriteFloatColor : 0)));
-                    w.Write(SpriteKey(sprite.sprite)); w.Write(SpriteKey(sprite.sprite2));
-                    WriteColor(w, color, floats);
+                    bool floats = NeedsFloats(node.spriteColor);
+                    w.Write((byte)((node.spriteEnabled ? SpriteEnabled : 0) | (floats ? SpriteFloatColor : 0)));
+                    w.Write(SpriteKey(node.firstSprite)); w.Write(SpriteKey(node.secondSprite));
+                    WriteColor(w, node.spriteColor, floats);
                 }
                 if (sr)
                 {
-                    Color color = sr.color;
-                    bool floats = NeedsFloats(color);
+                    bool floats = NeedsFloats(node.rendererColor);
                     w.Write(floats ? SpriteFloatColor : (byte)0);
-                    w.Write(SpriteKey(sr.sprite));
-                    WriteColor(w, color, floats);
+                    w.Write(SpriteKey(node.rendererSprite));
+                    WriteColor(w, node.rendererColor, floats);
                 }
             }
 

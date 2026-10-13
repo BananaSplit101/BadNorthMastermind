@@ -3,14 +3,12 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using Voxels.TowerDefense;
-using Voxels.TowerDefense.Upgrades;
 
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Whose squad is in (or on its way into) each house, for every player's labels over the houses (UI.HouseLabels),
-    /// and so a teammate's healing order only offers houses that are free on the leader's island. The leader reads its
-    /// own houses; everyone else gets them in the battle stream (HouseOccupants), all of them every 2 s and on change.
+    /// Whose squad is in (or on its way into) each house, for the labels over the houses (UI.HouseLabels) and so a
+    /// teammate's healing order only offers houses that are free on the leader's island.
     /// </summary>
     internal static class HouseOccupants
     {
@@ -82,10 +80,7 @@ namespace BadNorthMP.Net
             heardAt = Time.unscaledTime;
         }
 
-        /// <summary>
-        /// Every frame: a game that runs its own battle (the leader, or single player) reads its houses a few times a
-        /// second; a watcher's list lapses without news.
-        /// </summary>
+        /// <summary>Every frame: a game that runs its own battle reads its houses; a watcher's list lapses without news.</summary>
         public static void Update()
         {
             if (!Spectator.SpectatorSession.Active)

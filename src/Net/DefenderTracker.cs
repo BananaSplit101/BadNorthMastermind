@@ -10,15 +10,15 @@ using Voxels.TowerDefense.RaidGeneration;
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Defender side: gives every squad, agent, longship and projectile a network id as it appears, and streams
-    /// what the mastermind needs to mirror them: creation, spawn, death, removal, 20 Hz transform/animation
-    /// snapshots, house fire states, and the sounds and effects the battle plays.
-    /// State changes are found by polling at the snapshot rate.
+    /// The campaign leader's side of the battle stream: gives every squad, agent, longship and projectile a network id
+    /// as it appears and streams what watchers need to mirror them. State changes are found by polling at the
+    /// snapshot rate.
     /// </summary>
     internal static class DefenderTracker
     {
         private const float SnapshotInterval = 0.05f;
         private const int MaxPacketBytes = 1100; // Steam unreliable P2P packets max out around 1200 bytes
+        // Snapshot record sizes in bytes (layouts in Protocol.cs).
         private const int AgentRecordBytes = 4 + 12 + 8 + 1 + 4 + 2 + 1 + 2;
         private const float HouseFireStep = 0.03f;
         private static readonly int MovingParam = Animator.StringToHash("Moving");
@@ -63,13 +63,12 @@ namespace BadNorthMP.Net
         private static readonly List<NavSpot> currentTiles = new List<NavSpot>();
         private static readonly List<EnglishSquad> tileSquads = new List<EnglishSquad>();
         private static readonly List<EnglishSquad> sentTileSquads = new List<EnglishSquad>();
-        // Which squads could flee, as last sent; checked a few times a second.
+        // Who can flee, abilities and house occupants as last sent (as text keys), and when each is next checked or
+        // re-sent in full.
         private static string sentEvac = "";
         private static float nextEvac;
-        // Each squad's abilities (cooldown, uses left, blocked) as last sent, and when everything was last re-sent.
         private static string sentAbilities = "";
         private static float nextAbilities, nextAbilityRefresh;
-        // Who's in which house, as last sent.
         private static string sentOccupants = "";
         private static float nextOccupants, nextOccupantRefresh;
 
@@ -332,7 +331,7 @@ namespace BadNorthMP.Net
             SendHouseOccupants();
         }
 
-        /// <summary>Whose squad is in (or heading into) each house, for everyone's house labels and teammates' healing orders.</summary>
+        /// <summary>For everyone's house labels and teammates' healing orders.</summary>
         private static void SendHouseOccupants()
         {
             if (Time.unscaledTime < nextOccupants || Profile.campaign == null)
@@ -349,12 +348,7 @@ namespace BadNorthMP.Net
             BattleStream.Send(Packet.Build(MsgType.HouseOccupants, w => HouseOccupants.Write(w, occupants)), reliable: false);
         }
 
-        /// <summary>
-        /// Each squad's abilities as the leader has them, for the owners' buttons (SquadAbilityMirror): their copies never
-        /// run an ability themselves, so without this they never showed a cooldown, used a charge or saw the squad busy
-        /// healing, and every click in that time was refused. Sent when something changes (checked ten times a second),
-        /// and all of it every 2 s.
-        /// </summary>
+        /// <summary>For the owners' ability buttons (SquadAbilityMirror). Checked ten times a second, and all re-sent every 2 s.</summary>
         private static void SendSquadAbilities()
         {
             if (Time.unscaledTime < nextAbilities || Profile.campaign == null)
@@ -383,10 +377,7 @@ namespace BadNorthMP.Net
             BattleStream.Send(Packet.Build(MsgType.SquadAbilities, w => SquadAbilityMirror.Write(w, squads)), reliable: false);
         }
 
-        /// <summary>
-        /// Which battle squads are the mastermind's commanders (so the mastermind can find and order them), with each
-        /// one's trait and flag-bearer so every player sees the flag.
-        /// </summary>
+        /// <summary>Which battle squads are the mastermind's commanders, with each one's trait and flag-bearer.</summary>
         public static void SendCommanders()
         {
             var entries = new List<int[]>();
@@ -474,7 +465,7 @@ namespace BadNorthMP.Net
 
         private static void SendInPackets<T>(MsgType type, float time, List<T> items, int recordBytes, System.Action<BinaryWriter, T> write)
         {
-            int perPacket = (MaxPacketBytes - 7) / recordBytes;
+            int perPacket = (MaxPacketBytes - 7) / recordBytes; // 7: type, time, count
             for (int start = 0; start < items.Count; start += perPacket)
             {
                 int count = Mathf.Min(perPacket, items.Count - start);
@@ -507,10 +498,8 @@ namespace BadNorthMP.Net
 
         private const byte HasMovingParam = 1, HasSpeedParam = 2;
 
-        /// <summary>
-        /// Which of Body's parameters a controller has. Animator.parameters allocates a new array on every
-        /// call, so each controller is inspected once instead of per unit per snapshot.
-        /// </summary>
+        // Which of Body's parameters each controller has. Animator.parameters allocates a new array on every call,
+        // so each controller is inspected once.
         private static readonly Dictionary<RuntimeAnimatorController, byte> bodyParameters = new Dictionary<RuntimeAnimatorController, byte>();
 
         private static byte BodyParameters(Animator animator)
@@ -550,8 +539,8 @@ namespace BadNorthMP.Net
         }
 
         /// <summary>
-        /// The exact animation frame. Bad North drives walking by re-playing the walk state at the current
-        /// step phase every frame (Body.SteppingUpdate), so the state alone isn't enough.
+        /// The exact animation frame: Bad North re-plays the walk state at the current step phase every frame
+        /// (Body.SteppingUpdate), so the state alone isn't enough.
         /// </summary>
         private static void WriteAnimation(BinaryWriter w, Animator animator)
         {
