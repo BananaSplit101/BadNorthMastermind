@@ -218,7 +218,7 @@ namespace BadNorthMP.Spectator
             }
             catch (Exception e)
             {
-                WarnOnce("handle " + (MsgType)packet[0], $"Puppet world couldn't handle {(MsgType)packet[0]}: {e}");
+                WarnOnce("handle " + (MsgType)packet[0], $"Puppet world couldn't handle {(MsgType)packet[0]}: {e}", "puppet_world");
             }
         }
 
@@ -276,7 +276,7 @@ namespace BadNorthMP.Spectator
             if (!prefab) prefab = FindPrefab(prefabName);
             if (!prefab || !squad)
             {
-                WarnOnce("prefab " + prefabName, $"Can't mirror agent '{prefabName}' (prefab found: {(bool)prefab})");
+                WarnOnce("prefab " + prefabName, $"Can't mirror agent '{prefabName}' (prefab found: {(bool)prefab})", "puppet_world");
                 return;
             }
 
@@ -392,7 +392,7 @@ namespace BadNorthMP.Spectator
             Longship prefab = island.levelNode.possibleShips.Find(s => s && s.name == prefabName);
             if (!prefab)
             {
-                WarnOnce("ship " + prefabName, $"Can't mirror longship '{prefabName}'");
+                WarnOnce("ship " + prefabName, $"Can't mirror longship '{prefabName}'", "puppet_world");
                 return;
             }
 
@@ -774,10 +774,12 @@ namespace BadNorthMP.Spectator
             return prefab;
         }
 
-        private static void WarnOnce(string key, string message)
+        /// <summary>Once per key; with a <paramref name="problem"/> category, an error report too (ModLog.Problem).</summary>
+        private static void WarnOnce(string key, string message, string problem = null)
         {
-            if (warned.Add(key))
-                ModLog.Warn(message);
+            if (!warned.Add(key)) return;
+            if (problem != null) ModLog.Problem(problem, message);
+            else ModLog.Warn(message);
         }
     }
 
