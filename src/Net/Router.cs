@@ -5,12 +5,11 @@ using Steamworks;
 
 namespace BadNorthMP.Net
 {
-    /// <summary>Dispatches incoming packets to the handler registered for their message type.</summary>
     internal static class Router
     {
         public delegate void Handler(CSteamID sender, BinaryReader reader);
 
-        /// <summary>Battle stream messages (SquadSpawn and up) are passed on whole, for the puppet world.</summary>
+        /// <summary>Battle-stream messages (IsBattleMessage) are passed on whole, for the puppet world.</summary>
         public static Action<CSteamID, byte[]> BattleMessage = delegate { };
 
         private static readonly Dictionary<MsgType, Handler> handlers = new Dictionary<MsgType, Handler>();
@@ -23,8 +22,8 @@ namespace BadNorthMP.Net
         {
             if (data.Length == 0)
                 return;
-            // Only a player on another version is ignored; everyone else carries on. An error report's incident still
-            // gets through: a version mismatch is just when both sides' logs are wanted.
+            // A player on another version is ignored, except for error-report incidents: a version mismatch is just
+            // when both sides' logs are wanted.
             if (!Updater.IsCompatible(sender) && data[0] != (byte)MsgType.Incident) return;
             Handle(sender, data);
         }

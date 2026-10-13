@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
 using BadNorthMP.Game;
-using BadNorthMP.UI;
 using Steamworks;
 using UnityEngine;
 using Voxels.TowerDefense;
@@ -62,16 +61,12 @@ namespace BadNorthMP.Net
         private static bool Valid(float value) => !float.IsNaN(value) && !float.IsInfinity(value) && value >= 0f;
     }
 
-    /// <summary>
-    /// Requests from the mastermind (build a wave, give up) handled by the authoritative defender, and the
-    /// state/results the defender sends back.
-    /// </summary>
+    /// <summary>The mastermind's requests, handled by the campaign leader, and the state and results it sends back.</summary>
     internal static class MastermindNet
     {
         private const float StateInterval = 0.25f;
         private static float nextState;
         private static long stateSequence;
-        private const MsgType BuyUpgradeMessage = MsgType.BuyUpgrade;
         private static bool upgradePending;
         private static int pendingUpgradeRevision;
         private static float upgradeSentAt;
@@ -103,7 +98,7 @@ namespace BadNorthMP.Net
 
         public static void Init()
         {
-            Router.On(BuyUpgradeMessage, (sender, r) =>
+            Router.On(MsgType.BuyUpgrade, (sender, r) =>
             {
                 if (!(Roles.IsDefender && Roles.HasMastermind) || !FromMastermind(sender)) return;
                 try
@@ -129,7 +124,7 @@ namespace BadNorthMP.Net
             {
                 if (Roles.IsDefender && FromMastermind(sender))
                 {
-                    try { HandleWavePlan(sender, r); }
+                    try { HandleWavePlan(r); }
                     catch (System.Exception e)
                     {
                         ModLog.Error("Custom wave failed: " + e);
@@ -195,6 +190,7 @@ namespace BadNorthMP.Net
                     return;
                 bool ok = r.ReadBoolean();
                 string message = r.ReadString();
+                // "+..." is a war chest payout (Economy), not the answer to the pending request.
                 if (upgradePending && !message.StartsWith("+"))
                     upgradePending = false;
                 ModLog.Info("Mastermind: defender replied, success=" + ok + ": " + message);
@@ -274,7 +270,7 @@ namespace BadNorthMP.Net
                 planCost = active ? Economy.PlanCost : 0f,
                 planTile = active ? Economy.PlanTile : -1,
                 vikingsAlive = island && island.vikings ? island.vikings.agents.Count : 0,
-                done = Economy.Active && Economy.Done,
+                done = active && Economy.Done,
                 landingHold = Economy.HeldForLanding,
                 sequence = ++stateSequence,
                 upgrades = upgrades,
@@ -296,10 +292,9 @@ namespace BadNorthMP.Net
         // ---- Mastermind requests ---------------------------------------------------------------
 
         /// <summary>
-        /// Plan the current wave (it sails when its timer runs out), or send it now. An empty plan clears it:
-        /// a random wave sails instead.
+        /// The whole plan for the current wave: per beach (index into BeachChoices), the paid Vikings per type. It sails
+        /// when its timer runs out; an empty plan sails a random wave instead.
         /// </summary>
-        /// <summary>The whole plan for the current wave: per beach (index into BeachChoices), the paid Vikings per type.</summary>
         public static void RequestWavePlan(List<KeyValuePair<int, List<KeyValuePair<VikingAgent.Type, int>>>> landings)
         {
             if (!(Roles.IsMastermind && Roles.HasMastermind))
@@ -386,7 +381,7 @@ namespace BadNorthMP.Net
             pendingUpgradeRevision = State.upgrades.revision;
             upgradeSentAt = Time.unscaledTime;
             SetResult("Buying upgrade...");
-            ToLeader(Packet.Build(BuyUpgradeMessage, w =>
+            ToLeader(Packet.Build(MsgType.BuyUpgrade, w =>
             {
                 w.Write(State.upgrades.session);
                 w.Write(State.upgrades.revision);
@@ -408,7 +403,7 @@ namespace BadNorthMP.Net
         /// The mastermind's plan for the current wave: byte landings, then per landing int tile, byte count and
         /// (int vikingType, int paid) pairs. It sails when the wave's timer runs out; there's no sending early.
         /// </summary>
-        private static void HandleWavePlan(CSteamID sender, BinaryReader r)
+        private static void HandleWavePlan(BinaryReader r)
         {
             int landingCount = r.ReadByte();
             if (landingCount > EconomyConfig.MaxLandingsPerWave)

@@ -26,7 +26,7 @@ namespace BadNorthMP.Net
         Sound = 22,       // byte target (SoundTarget), int targetId, Vector3 pos, bool byName, string name | int id, int action (-1 = default)
         Effect = 23,      // string effectName, Vector3 pos, short4 rot, Vector3 scale, bool onNavMesh
         Dust = 24,        // Vector3 pos, Vector3 dir: footstep/landing dust (DustParticles)
-        UnitVisualNode = 25,
+        UnitVisualNode = 25, // 25..29: UnitVisualStream (it names them itself)
         UnitAnimatorFrame = 26,
         UnitNodeFrame = 27,
         UnitAgentFrame = 28,
@@ -108,7 +108,7 @@ namespace BadNorthMP.Net
             w.Write(v.z);
         }
 
-        /// <summary>Unit quaternion as four shorts (8 bytes instead of 16).</summary>
+        /// <summary>A unit quaternion as four shorts (x32767): 8 bytes instead of 16.</summary>
         public static void WriteRotation(this BinaryWriter w, UnityEngine.Quaternion q)
         {
             w.Write((short)(q.x * 32767f));

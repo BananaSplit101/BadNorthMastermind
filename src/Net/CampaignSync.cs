@@ -11,8 +11,6 @@ namespace BadNorthMP.Net
     /// <summary>Reliable, bounded campaign snapshots, separate from the island battle stream.</summary>
     internal static class CampaignSync
     {
-        internal const MsgType CampaignChunk = MsgType.CampaignChunk;
-        internal const MsgType CampaignClosed = MsgType.CampaignClosed;
         private const int ChunkSize = 48 * 1024;
         private const int MaxPayload = 16 * 1024 * 1024;
         private static bool initialized, dirty = true, quiet;
@@ -36,7 +34,7 @@ namespace BadNorthMP.Net
         {
             if (initialized) return;
             initialized = true;
-            Router.On(CampaignChunk, Receive);
+            Router.On(MsgType.CampaignChunk, Receive);
             Router.On(MsgType.CampaignRequest, (sender, reader) =>
             {
                 var session = SteamSession.Instance;
@@ -50,7 +48,7 @@ namespace BadNorthMP.Net
                 // The session may have swallowed the snapshot: send it again.
                 if (Roles.IsDefender) { sentTo.Remove(member); nextPoll = 0f; }
             };
-            Router.On(CampaignClosed, (sender, reader) =>
+            Router.On(MsgType.CampaignClosed, (sender, reader) =>
             {
                 if (!Accept(sender)) return;
                 int id = reader.ReadInt32();
@@ -61,12 +59,11 @@ namespace BadNorthMP.Net
             });
         }
 
-        // Changes come in bursts (the end of an island saves, the map opens, the menu reopens, ...), and every snapshot
-        // sent makes every viewer reload their map: the leader waits until the campaign has been still for Settle
-        // seconds (on the map for that long too), at most MaxSettle seconds from the first change or from the map
-        // coming up, whichever is later (the end of an island saves before a load that can take longer than that), and
-        // sends that once. The map's own background work saves too (islands built as they come within reach), but
-        // every viewer's map works that out for itself: those saves are quiet (IslandGeneratorQuietSavePatch).
+        // Changes come in bursts (an island's end saves, the map opens, the menu reopens, ...) and every snapshot makes
+        // every viewer reload their map, so the leader sends once the campaign has been still, and on the map, for
+        // Settle seconds: at most MaxSettle seconds after the first change or the map coming up, whichever is later (an
+        // island's end saves before a load that can take longer than that). The map's own background saves (islands
+        // built as they come within reach) are quiet: every viewer's map does that itself (IslandGeneratorQuietSavePatch).
         private const float Settle = 1.5f, MaxSettle = 6f;
         private static float changedAt, firstChangeAt = -1f, mapSince = -1f;
 
@@ -147,7 +144,7 @@ namespace BadNorthMP.Net
                 }
                 foreach (var member in members)
                     if (member != session.Me && Updater.IsCompatible(member) && sentTo.Add(member))
-                        session.Send(member, Packet.Build(CampaignClosed, w => w.Write(revision)));
+                        session.Send(member, Packet.Build(MsgType.CampaignClosed, w => w.Write(revision)));
                 return;
             }
             if (!stack.stateCampaign.gameObject.activeInHierarchy) { mapSince = -1f; return; }
@@ -187,10 +184,7 @@ namespace BadNorthMP.Net
                     Send(member, snapshot, revision);
         }
 
-        /// <summary>
-        /// Watchers: the leader sends the campaign once. If it hasn't arrived 10 seconds after the party started
-        /// (and no battle is showing), ask for it again every 10 seconds.
-        /// </summary>
+        /// <summary>Watchers: the campaign hasn't arrived 10 s after the party started (and no battle is showing): ask every 10 s.</summary>
         private static void AskIfMissing(SteamSession session)
         {
             if (haveCampaign || !session.InLobby || Roles.IsDefender || !Roles.WatchesBattle || !Updater.Compatible ||
@@ -200,7 +194,7 @@ namespace BadNorthMP.Net
             CSteamID leader = Roles.DefenderId;
             if (leader == CSteamID.Nil || !session.Members().Contains(leader)) return;
             ModLog.Info("The campaign hasn't arrived from " + SteamSession.NameOf(leader) + "; asking again");
-            session.Send(leader, Packet.Build(MsgType.CampaignRequest, w => { }));
+            session.Send(leader, Packet.Build(MsgType.CampaignRequest));
         }
 
         private static void RefreshContext()
@@ -235,7 +229,7 @@ namespace BadNorthMP.Net
             {
                 int offset = index * ChunkSize;
                 int size = Math.Min(ChunkSize, payload.Length - offset);
-                SteamSession.Instance.Send(recipient, Packet.Build(CampaignChunk, writer =>
+                SteamSession.Instance.Send(recipient, Packet.Build(MsgType.CampaignChunk, writer =>
                 {
                     writer.Write(id);
                     writer.Write(index);

@@ -2,14 +2,10 @@ using System.Collections.Generic;
 using Steamworks;
 using UnityEngine;
 using BadNorthMP.UI;
-using Voxels.TowerDefense;
 
 namespace BadNorthMP.Net
 {
-    /// <summary>
-    /// Lobby-level flow: wires up the message handlers, pings everyone, keeps a short event log (joins, leaves,
-    /// roles) and runs the per-frame updates of the multiplayer systems.
-    /// </summary>
+    /// <summary>Lobby-level flow: message handlers, pings, a short event log and the multiplayer systems' per-frame updates.</summary>
     internal class MultiplayerGame : MonoBehaviour
     {
         private const float PingInterval = 2f;

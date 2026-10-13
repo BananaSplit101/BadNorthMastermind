@@ -5,9 +5,8 @@ using UnityEngine;
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Friends' Bad North Multiplayer games, to join from the Multiplayer screen without an invite. Steam says which
-    /// lobby each friend playing Bad North is in (the mod's lobbies are friends-only, so friends may see and join
-    /// them); the lobby's own data, kept up to date by its host (Publish), arrives a moment after asking for it.
+    /// Friends' games, to join from the Multiplayer screen without an invite (the mod's lobbies are friends-only). A
+    /// lobby's own data, kept current by its host (Publish), arrives a moment after asking for it.
     /// </summary>
     internal static class FriendLobbies
     {

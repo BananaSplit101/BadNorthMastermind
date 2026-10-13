@@ -10,13 +10,10 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Nobody's battle starts while someone is still loading it. The leader sends the battle the moment its island
-    /// starts loading, finishes its own setup, then stays on its loading screen (no squads, no waves, no timers) until
-    /// every other player reports their copy of the island ready. Everyone sees who is still loading. After two minutes
-    /// it starts anyway, so a crashed player can't hold the rest forever.
-    /// The campaign map works the same way: whenever the leader arrives on the map, or sends everyone a changed
-    /// campaign (Next Turn, an upgrade), voting waits until every player has that map loaded (at most MapTimeout).
-    /// While either wait is on, every player's screen is greyed out and takes no clicks.
+    /// Nobody's battle starts while someone is still loading it: the leader finishes its own setup, then stays on its
+    /// loading screen until every other player reports their island ready (at most Timeout, so a crashed player can't
+    /// hold the rest forever). Likewise voting waits until everyone has the leader's latest campaign map loaded (at
+    /// most MapTimeout). While either wait is on, every player's screen is greyed out and takes no clicks.
     /// </summary>
     internal class LoadGate : MonoBehaviour
     {
@@ -57,9 +54,8 @@ namespace BadNorthMP.Net
         private static bool IslandWaiting => loading.Count > 0 && Time.unscaledTime - loadingHeardAt < 4f && Session && Session.InLobby;
 
         /// <summary>
-        /// Someone is still loading the island or the map: every player's screen is greyed out and takes no clicks
-        /// until everyone has it loaded. The leader's word is only trusted for 4 s, so a leader who vanishes can't
-        /// leave anyone locked out.
+        /// Someone is still loading the island or the map: every screen is greyed out and takes no clicks. The leader's
+        /// word is only trusted for 4 s, so a leader who vanishes can't leave anyone locked out.
         /// </summary>
         public static bool Blocking => IslandWaiting || MapWaiting;
 
@@ -161,9 +157,8 @@ namespace BadNorthMP.Net
         }
 
         /// <summary>
-        /// Watchers: a new battle is on its way, or the last one ended. The island we said we were ready for is gone, and a
-        /// retry reloads the same island number: without forgetting, the old "ready" was repeated for the new island at
-        /// once (before it had even started loading), and the leader started without us.
+        /// Watchers: a new battle is on its way, or the last one ended. A retry reloads the same island number: without
+        /// forgetting, the old "ready" was repeated for the new island before it had loaded, and the leader started without us.
         /// </summary>
         public static void ForgetReport() => reportedLevel = -1;
 
@@ -231,19 +226,17 @@ namespace BadNorthMP.Net
         {
             if (!Session || !Session.InLobby) return;
             nextMapBroadcast = Time.unscaledTime + 1f;
-            HeardMap(mapVisit, mapRevision, new List<CSteamID>(mapWaiting));
-            var listed = new List<CSteamID>(mapWaiting);
-            int visit = mapVisit, revision = mapRevision;
+            HeardMap(mapVisit, mapRevision, mapWaiting);
             Session.Broadcast(Packet.Build(MsgType.MapWait, w =>
             {
-                w.Write(visit);
-                w.Write(revision);
-                w.Write((byte)Mathf.Min(listed.Count, 255));
-                foreach (CSteamID member in listed) w.Write(member.m_SteamID);
+                w.Write(mapVisit);
+                w.Write(mapRevision);
+                w.Write((byte)Mathf.Min(mapWaiting.Count, 255));
+                foreach (CSteamID member in mapWaiting) w.Write(member.m_SteamID);
             }));
         }
 
-        private static void HeardMap(int visit, int revision, List<CSteamID> listed)
+        private static void HeardMap(int visit, int revision, IEnumerable<CSteamID> listed)
         {
             heardVisit = visit;
             heardRevision = revision;
@@ -299,9 +292,8 @@ namespace BadNorthMP.Net
         }
 
         /// <summary>
-        /// While anyone is still loading (Blocking): a grey shade over everything, on top of every other screen, that
-        /// swallows every click (the game's island and map clicks go through the same UI raycast), with who it's
-        /// waiting for in the middle.
+        /// While Blocking: a grey shade over every screen that swallows every click (the game's island and map clicks
+        /// go through the same UI raycast), saying who it's waiting for.
         /// </summary>
         private void ShowWaiting()
         {
