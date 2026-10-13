@@ -1,19 +1,16 @@
 using System;
 using System.Collections.Generic;
 using HarmonyLib;
-using UnityEngine;
 using Voxels.TowerDefense;
-using Voxels.TowerDefense.Upgrades;
 using TargetEntry = RTM.Utilities.Tuple<Voxels.TowerDefense.Upgrades.NavSpotTargetableAbility, Voxels.TowerDefense.NavSpotTargetCache>;
 
 namespace BadNorthMP.Patches
 {
     /// <summary>
     /// The targeting manager lends each targeted ability (Pike Charge, Bomb, Mine...) a cache sized for the island and
-    /// takes them back when the island is wiped. A watcher's islands are torn down without that wipe, so caches stay
-    /// lent to abilities of squads that no longer exist, sized for an older island: on a bigger island the targeting
-    /// loop ran past the end of one and stopped, so no targeted ability on that screen found targets again (and after
-    /// enough islands there would be no caches left to lend). Before each island: take back the orphans, resize the rest.
+    /// takes them back when the island is wiped. A watcher's islands are torn down without that wipe, so caches stayed
+    /// lent to gone squads, sized for an older island: on a bigger one the targeting loop ran off the end and no
+    /// targeted ability found targets again. Before each island: take back the orphans, resize the rest.
     /// </summary>
     [HarmonyPatch(typeof(NavSpotTargetManager), "Voxels.TowerDefense.IslandGameplayManager.ISetupIsland.OnSetup")]
     internal static class TargetCacheRecyclePatch

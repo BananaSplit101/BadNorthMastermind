@@ -5,10 +5,9 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Patches
 {
     /// <summary>
-    /// An island reaches its mesh and texture pools through its campaign (levelNode.campaign.meshPool), and a
-    /// campaign's teardown nulls them. Islands and boats that outlive their campaign then crash: a spectator's campaign
-    /// reload aborted in island teardown (MeshMerger2), and boat wakes threw every frame (Wake.Start/LateUpdate). Such
-    /// islands get stand-in pools instead, which are emptied now and then.
+    /// An island reaches its mesh and texture pools through its campaign, whose teardown nulls them. Islands and boats
+    /// that outlived their campaign crashed (a watcher's reload aborted in MeshMerger2, boat wakes threw every frame),
+    /// so they get stand-in pools instead.
     /// </summary>
     internal static class OrphanIslandPools
     {
@@ -84,8 +83,8 @@ namespace BadNorthMP.Patches
     }
 
     /// <summary>
-    /// A squad whose last soldier goes while assigned to a house (a mirrored squad at island teardown, or one whose
-    /// pather is already gone) made SquadDead throw. Do the same bookkeeping without the null pather.
+    /// SquadDead threw for a squad whose pather is already gone (a mirrored squad at island teardown): do the same
+    /// bookkeeping without it.
     /// </summary>
     [HarmonyPatch(typeof(SquadReplenishLocation), nameof(SquadReplenishLocation.SquadDead))]
     internal static class ReplenishSquadDeadPatch

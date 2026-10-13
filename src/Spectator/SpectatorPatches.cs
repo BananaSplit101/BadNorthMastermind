@@ -7,8 +7,7 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Spectator
 {
     // The island's intro-music timer can fire after the island was taken down under it (a watcher reloading for a
-    // retried battle): the game's own code then throws a NullReferenceException every few seconds. There's nothing to
-    // play on an island that's gone.
+    // retried battle): the game's own code then throws a NullReferenceException every few seconds.
     [HarmonyPatch(typeof(IslandAmbiance), "TriggerIntroMusic")]
     internal static class IntroMusicOnGoneIslandPatch
     {

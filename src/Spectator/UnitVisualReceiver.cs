@@ -100,7 +100,6 @@ namespace BadNorthMP.Spectator
                 foreach (Frame frame in frames[key]) frame.Dispose();
                 frames.Remove(key); applied.Remove(key);
             }
-            staleKeys.Clear();
         }
 
         public void Release(Agent agent)
@@ -207,20 +206,18 @@ namespace BadNorthMP.Spectator
 
         public void Apply(Agent agent, float time)
         {
-            if (frames.TryGetValue(RootKey, out List<Frame> root) && Select(root, time, out Frame rf, out Frame unused, out float rt))
+            if (frames.TryGetValue(RootKey, out List<Frame> root) && Select(root, time, out Frame rf, out _, out _))
             {
+                var r = rf.Read();
+                bool active = r.ReadBoolean(); float health = r.ReadSingle(), max = r.ReadSingle(); bool indoors = r.ReadBoolean();
+                HasAgentFrame = true; Visible = active && !indoors;
+                agent.health = health; agent.maxHealth = max;
+                if (agent.gameObject.activeSelf != Visible)
                 {
-                    var r = rf.Read();
-                    bool active = r.ReadBoolean(); float health = r.ReadSingle(), max = r.ReadSingle(); bool indoors = r.ReadBoolean();
-                    HasAgentFrame = true; Visible = active && !indoors;
-                    agent.health = health; agent.maxHealth = max;
-                    if (agent.gameObject.activeSelf != Visible)
-                    {
-                        agent.gameObject.SetActive(Visible);
-                        // OnEnable can reset animation/equipment. Reapply cached presentation
-                        // when a healed unit returns, even if its source samples did not change.
-                        applied.Clear();
-                    }
+                    agent.gameObject.SetActive(Visible);
+                    // OnEnable can reset animation/equipment: reapply everything when a healed unit returns, even if
+                    // its samples did not change.
+                    applied.Clear();
                 }
             }
             // Apply parameters first; states second; evaluate; restore scripted child poses last.
@@ -241,23 +238,21 @@ namespace BadNorthMP.Spectator
                     // Frozen animators and unchanged parameters/poses need no repeat evaluation
                     // after their final sample; interpolation still runs between distinct samples.
                     if ((!node || !evaluatedThisFrame) && a == b && applied.TryGetValue(entry.Key, out Frame previous) && previous == a) continue;
-                    {
-                        var r = a.Read(); var next = b.Read(true);
-                        ushort index = r.ReadUInt16(); next.ReadUInt16();
-                        Transform tr = Resolve(index, agent);
-                        if (!tr) continue;
-                        if (node) { ApplyNode(r, next, t, tr, tr == agent.transform, agent, definitions[index]); applied[entry.Key] = a == b ? a : null; continue; }
-                        byte component = r.ReadByte(), kind = r.ReadByte(); next.ReadByte(); next.ReadByte();
-                        if (kind != pass) continue;
-                        Animator[] animators = definitions[index].animators;
-                        if (component >= animators.Length) continue;
-                        Animator animator = animators[component];
-                        animator.fireEvents = false; animator.speed = 0; animator.applyRootMotion = false;
-                        if (kind == 0) ApplyParameter(r, next, t, animator);
-                        else { ApplyLayer(r, next, t, animator); evaluated.Add(animator); }
-                        if (kind == 0 || !animator.enabled || animator.isActiveAndEnabled)
-                            applied[entry.Key] = a == b ? a : null;
-                    }
+                    var r = a.Read(); var next = b.Read(true);
+                    ushort index = r.ReadUInt16(); next.ReadUInt16();
+                    Transform tr = Resolve(index, agent);
+                    if (!tr) continue;
+                    if (node) { ApplyNode(r, next, t, tr, tr == agent.transform, agent, definitions[index]); applied[entry.Key] = a == b ? a : null; continue; }
+                    byte component = r.ReadByte(), kind = r.ReadByte(); next.ReadByte(); next.ReadByte();
+                    if (kind != pass) continue;
+                    Animator[] animators = definitions[index].animators;
+                    if (component >= animators.Length) continue;
+                    Animator animator = animators[component];
+                    animator.fireEvents = false; animator.speed = 0; animator.applyRootMotion = false;
+                    if (kind == 0) ApplyParameter(r, next, t, animator);
+                    else { ApplyLayer(r, next, t, animator); evaluated.Add(animator); }
+                    if (kind == 0 || !animator.enabled || animator.isActiveAndEnabled)
+                        applied[entry.Key] = a == b ? a : null;
                 }
                 foreach (Animator animator in evaluated)
                     if (animator.isActiveAndEnabled) { animator.Update(0); evaluatedThisFrame = true; }
@@ -329,8 +324,8 @@ namespace BadNorthMP.Spectator
             if (fallback && UnitVisualStream.SpriteKey(fallback) == key) return fallback;
             if (spriteIsland != GameAccess.CurrentIsland)
             { spriteIsland = GameAccess.CurrentIsland; sprites.Clear(); spritesIndexed = false; }
-            // Rare runtime-created sprites can appear after the first index. A missing sprite
-            // may refresh it at most once per five seconds, shared by the entire spectator army.
+            // Runtime-created sprites can appear after the first index: a missing one refreshes it at most every 5 s
+            // (shared by every puppet).
             if (!spritesIndexed || (!sprites.ContainsKey(key) && DateTime.UtcNow.Ticks >= nextSpriteRefresh))
             {
                 foreach (Sprite sprite in Resources.FindObjectsOfTypeAll<Sprite>())
@@ -388,19 +383,17 @@ namespace BadNorthMP.Spectator
             NodePose start = ReadPose(r), end = ReadPose(b);
             bool active = (start.flags & UnitVisualStream.NodeActive) != 0;
             bool world = (start.flags & UnitVisualStream.NodeWorld) != 0, endWorld = (end.flags & UnitVisualStream.NodeWorld) != 0;
-            ushort parentIndex = start.parent, endParent = end.parent;
-            if (world != endWorld || parentIndex != endParent) t = 0; // coordinate systems cannot be blended
-            Vector3 pos = start.pos, endPos = end.pos; Quaternion rot = start.rot, endRot = end.rot;
-            Vector3 scale = start.scale, endScale = end.scale;
+            if (world != endWorld || start.parent != end.parent) t = 0; // coordinate systems cannot be blended
             if (!root)
             {
-                Transform parent = world ? (GameAccess.CurrentIsland ? GameAccess.CurrentIsland.runContainer : null) : Resolve(parentIndex, agent);
+                Transform parent = world ? (GameAccess.CurrentIsland ? GameAccess.CurrentIsland.runContainer : null) : Resolve(start.parent, agent);
                 if (tr.parent != parent) tr.SetParent(parent, false);
                 if (tr.gameObject.activeSelf != active) tr.gameObject.SetActive(active);
-                if (world) { tr.position = Vector3.Lerp(pos, endPos, t); tr.rotation = Quaternion.Slerp(rot, endRot, t); }
-                else { tr.localPosition = Vector3.Lerp(pos, endPos, t); tr.localRotation = Quaternion.Slerp(rot, endRot, t); }
+                Vector3 pos = Vector3.Lerp(start.pos, end.pos, t); Quaternion rot = Quaternion.Slerp(start.rot, end.rot, t);
+                if (world) { tr.position = pos; tr.rotation = rot; }
+                else { tr.localPosition = pos; tr.localRotation = rot; }
             }
-            Vector3 desiredScale = Vector3.Lerp(scale, endScale, t);
+            Vector3 desiredScale = Vector3.Lerp(start.scale, end.scale, t);
             if (world && tr.parent)
             {
                 Vector3 parentScale = tr.parent.lossyScale;
