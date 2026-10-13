@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Text;
 using BadNorthMP.Net;
 using BadNorthMP.Spectator;
-using HarmonyLib;
-using I2.Loc;
 using Steamworks;
 using UnityEngine;
 using UnityEngine.UI;
@@ -13,14 +11,12 @@ using Voxels.TowerDefense.UI;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// The multiplayer screen, built on the game's own popup (ModalOverlay) so it looks and navigates like
-    /// the rest of Bad North. Opened from the Multiplayer button in the main menu and pause menu.
+    /// The multiplayer screen, built on the game's own popup (ModalOverlay) so it looks and navigates like the rest of
+    /// Bad North.
     /// </summary>
     internal class MultiplayerScreen : MonoBehaviour
     {
         private const float RefreshSeconds = 0.25f;
-        // Any real term works: the label is replaced with plain text right after.
-        private const string PlaceholderTerm = "UI/COMMON/OK";
 
         private static MultiplayerScreen instance;
 
@@ -31,8 +27,8 @@ namespace BadNorthMP.UI
         private static bool autoOpenPending;
         public static void RequestOpen() { autoOpenPending = true; }
 
-        // The popup's text, laid out roomier: second lines (a player's role, recent events) smaller and softer, and a
-        // half-line gap between players. Sizes follow the popup's own font (read when it opens).
+        // Second lines (a player's role, recent events) are smaller and softer, with a half-line gap between players.
+        // The sizes follow the popup's own font, read when it opens.
         private const string Soft = "#7D7266";
         private static int smallSize = 22, gapSize = 12;
 
@@ -41,7 +37,7 @@ namespace BadNorthMP.UI
 
         private void Awake() => instance = this;
 
-        /// <summary>Button callback for the menu entries. Returns true so the game plays its click sound.</summary>
+        /// <summary>Returns true so the game plays its click sound.</summary>
         public static bool Open()
         {
             // The first time: the error reports notice, then this screen.
@@ -115,20 +111,16 @@ namespace BadNorthMP.UI
             else if (Updater.UpdateAvailable && !Updater.Busy) AddButton("Update to " + Updater.LatestVersion, Updater.ConfirmDownload);
 
             bool versionMismatch = Session.InLobby && !Updater.Compatible;
-            if (!versionMismatch && Spectator.SpectatorSession.Active)
-                AddButton("Stop watching", Spectator.SpectatorSession.Instance.StopWatching);
+            if (!versionMismatch && SpectatorSession.Active)
+                AddButton("Stop watching", SpectatorSession.Instance.StopWatching);
             else if (Session.Ready && !Session.InLobby && !InCampaign())
                 GameUi.AddPopupButton(popup, "Play", () => { overlay = null; CampaignScreen.Open(); }, closes: true);
 
             if (Session.InLobby && Updater.Compatible && !SpectatorSession.Active && (!InCampaign() || PartyFlow.State.phase == 1))
             {
-                if (Session.IsHost && !PartyFlow.Active && Roles.HasMastermind)
-                {
-                    AddButton("Start", PartyCampaignPicker.Open);
-                }
+                if (Session.IsHost && !PartyFlow.Active && Roles.HasMastermind) AddButton("Start", PartyCampaignPicker.Open);
                 if (Session.IsHost && PartyFlow.State.phase == 1) AddButton("Back", PartyFlow.CancelDraft);
                 if (PartyFlow.State.phase == 1) AddButton("Choose commanders", CommanderDraftScreen.Open);
-
             }
 
             if (Session.Ready && !Session.InLobby)
@@ -145,12 +137,7 @@ namespace BadNorthMP.UI
             }
             else if (Session.InLobby)
             {
-                if (Session.IsHost)
-                {
-                    AddButton("Invite friend", Session.OpenInviteDialog);
-
-                }
-
+                if (Session.IsHost) AddButton("Invite friend", Session.OpenInviteDialog);
                 AddButton("Leave lobby", Session.Leave);
             }
 
@@ -179,7 +166,7 @@ namespace BadNorthMP.UI
             string update = $"{Updater.UpdateAvailable}/{Updater.Busy}/{Updater.Staged}/{ModConfig.SendReports.Value}/";
             if (Session.InLobby && !Updater.Compatible)
                 return update + "mismatch";
-            if (Spectator.SpectatorSession.Active)
+            if (SpectatorSession.Active)
                 return update + "spectating";
             if (!Session.InLobby)
             {
@@ -226,8 +213,7 @@ namespace BadNorthMP.UI
                 return sb.ToString();
             }
 
-            // Each player: their name, then their role and ping on a smaller, softer line (as one line it wrapped
-            // mid-way), with a little room between players.
+            // Each player's role and ping go on a second, quieter line (as one line it wrapped mid-way).
             List<CSteamID> members = Session.Members();
             for (int i = 0; i < members.Count; i++)
             {
@@ -287,10 +273,8 @@ namespace BadNorthMP.UI
             return sb.ToString();
         }
 
-        /// <summary>Smaller, softer text: the line under a name, a passing event.</summary>
         private static string Quiet(string text) => $"<size={smallSize}><color={Soft}>{text}</color></size>";
 
-        /// <summary>An empty half line: a little room between players.</summary>
         private static string Gap() => $"<size={gapSize}> </size>";
 
         /// <summary>Players' own text (Steam names) shown as written: a '&lt;' in it can't start markup.</summary>

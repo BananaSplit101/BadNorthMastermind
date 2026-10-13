@@ -6,8 +6,8 @@ using UnityEngine;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// Players' Steam profile pictures as sprites (64x64), loaded like the game's own SteamUtil.LoadProfileImage.
-    /// Steam may not have a friend's picture yet; it is requested and tried again a second later.
+    /// Players' Steam profile pictures (64x64), loaded like the game's own SteamUtil.LoadProfileImage. A picture Steam
+    /// doesn't have yet is requested and tried again a second later.
     /// </summary>
     internal static class SteamAvatars
     {

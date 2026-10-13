@@ -4,14 +4,12 @@ using I2.Loc;
 using UnityEngine;
 using UnityEngine.UI;
 using Voxels.TowerDefense;
-using Voxels.TowerDefense.UI;
 
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// Shows plain text in the game's in-battle notification banner (the "wave incoming" style). On the campaign
-    /// map, which has no banner, the text appears as a plain notice at the top of the screen. A banner posted while
-    /// the island is still loading (its banner display switched off) waits until it's up.
+    /// Plain text in the game's in-battle notification banner ("wave incoming" style), or, on the campaign map (no
+    /// banner), a plain notice at the top of the screen.
     /// </summary>
     internal static class GameNotify
     {
@@ -76,20 +74,13 @@ namespace BadNorthMP.UI
         {
             if (!instance)
             {
-                var root = new GameObject("BNMP Map Notice");
-                DontDestroyOnLoad(root);
-                var canvas = root.AddComponent<Canvas>();
-                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                canvas.sortingOrder = 600;
-                var scaler = root.AddComponent<CanvasScaler>();
-                scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-                scaler.referenceResolution = new Vector2(1920f, 1080f);
-                scaler.matchWidthOrHeight = 1f;
+                GameObject root = GameStyle.Canvas("BNMP Map Notice", 600);
+                root.GetComponent<GraphicRaycaster>().enabled = false;
                 instance = root.AddComponent<MapNotice>();
                 var node = new GameObject("Text");
                 node.transform.SetParent(root.transform, false);
                 instance.label = node.AddComponent<Text>();
-                instance.label.font = GameFont();
+                instance.label.font = GameStyle.Font;
                 instance.label.fontSize = 30;
                 instance.label.alignment = TextAnchor.UpperCenter;
                 instance.label.color = Color.white;
@@ -103,16 +94,6 @@ namespace BadNorthMP.UI
             instance.label.text = text;
             instance.label.gameObject.SetActive(true);
             instance.hideAt = Time.unscaledTime + duration;
-        }
-
-        private static Font GameFont()
-        {
-            foreach (MainMenu menu in Resources.FindObjectsOfTypeAll<MainMenu>())
-            {
-                var prefab = Traverse.Create(menu).Field<ButtonWidget>("textButtonPrefab").Value;
-                if (prefab && prefab.label && prefab.label.font) return prefab.label.font;
-            }
-            return Resources.GetBuiltinResource<Font>("Arial.ttf");
         }
 
         private void Update()

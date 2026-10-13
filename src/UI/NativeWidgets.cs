@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using HarmonyLib;
 using I2.Loc;
 using UnityEngine;
@@ -11,8 +10,8 @@ using UIState = RTM.UISystem.UIInteractable.State;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// Copies of the game's own battle widgets for screens the game doesn't have. Only graphics survive the copy
-    /// (plus the round button's native animator); ability logic, input, pooling and localisation are removed.
+    /// Graphics-only copies of the game's battle widgets for our own screens: ability logic, input, pooling and
+    /// localisation are stripped (the round button keeps its native animator).
     /// </summary>
     internal static class NativeWidgets
     {
@@ -27,13 +26,16 @@ namespace BadNorthMP.UI
         private static float nextSearch;
         private static bool reported;
 
-        public static bool HasRoundButton => FindTemplates() && abilityButton;
+        public static bool HasRoundButton
+        {
+            get { FindTemplates(); return abilityButton; }
+        }
         public static ActiveAbilityButton RoundButtonTemplate => abilityButton;
 
         /// <summary>The templates load with the island UI; search at most every two seconds until found.</summary>
-        private static bool FindTemplates()
+        private static void FindTemplates()
         {
-            if ((abilityButton && coin) || Time.unscaledTime < nextSearch) return true;
+            if ((abilityButton && coin) || Time.unscaledTime < nextSearch) return;
             nextSearch = Time.unscaledTime + 2f;
             if (!abilityButton)
                 foreach (ActiveAbilityButton candidate in Resources.FindObjectsOfTypeAll<ActiveAbilityButton>())
@@ -54,7 +56,6 @@ namespace BadNorthMP.UI
                 reported = true;
                 ModLog.Info("Mastermind HUD: using the game's ability button and coin graphics");
             }
-            return true;
         }
 
         /// <summary>Copy without waking anything up: instantiate under an inactive parent, then strip scripts.</summary>
@@ -158,8 +159,8 @@ namespace BadNorthMP.UI
     }
 
     /// <summary>
-    /// A copy of the round ability button from a selected squad's banner: the native disc with its hover, press,
-    /// selected and greyed-out animation, an icon, the "x2" charge bubble and the hover tooltip.
+    /// A copy of the round ability button from a selected squad's banner, with its native hover, press, selected and
+    /// greyed-out animation, the "x2" charge bubble and the hover tooltip.
     /// </summary>
     internal sealed class NativeRoundButton
     {
@@ -192,7 +193,7 @@ namespace BadNorthMP.UI
             input.onClick = onClick;
 
             if (NativeWidgets.HasRoundButton) button.Copy(size);
-            else button.Fallback(size);
+            else button.Fallback();
 
             button.caption = NativeWidgets.Text(holder.transform, font, "", Mathf.RoundToInt(Mathf.Clamp(size * 0.24f, 15f, 21f)));
             var rect = button.caption.rectTransform;
@@ -208,9 +209,8 @@ namespace BadNorthMP.UI
         private void Copy(float size)
         {
             ActiveAbilityButton source = NativeWidgets.RoundButtonTemplate;
-            // Keep the visual and the tooltip's Localize long enough to read their references.
+            // Keep the visual (and the tooltip's Localize) just long enough to read its references into the copy.
             GameObject copy = NativeWidgets.GraphicsCopy(source.gameObject, null, typeof(MaskedSpriteAnimated), typeof(ActiveAbilityButtonVisual), typeof(Localize));
-            // The copy's visual still holds references into the copy; read them, then drop it.
             var visual = copy.GetComponent<ActiveAbilityButtonVisual>();
             var fields = Traverse.Create(visual);
             anim = fields.Field<MaskedSpriteAnimated>("maskedSpriteAnimated").Value;
@@ -240,7 +240,7 @@ namespace BadNorthMP.UI
             NativeWidgets.Fit((RectTransform)copy.transform, disc ? (RectTransform)disc.transform : null, size, 100f);
         }
 
-        private void Fallback(float size)
+        private void Fallback()
         {
             var go = new GameObject("Disc", typeof(RectTransform));
             go.transform.SetParent(root.transform, false);

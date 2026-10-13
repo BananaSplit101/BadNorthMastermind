@@ -1,15 +1,14 @@
 using System.Text;
 using BadNorthMP.Game;
 using UnityEngine;
-using UnityEngine.UI;
 using Voxels.TowerDefense.ProfileInternals;
 using Voxels.TowerDefense.UI;
 
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// Multiplayer > Play: the defender's multiplayer campaigns (separate save slots). Continue one, delete
-    /// one, or start a new one through the game's own new-campaign popup.
+    /// Multiplayer > Play: the defender's multiplayer campaigns (separate save slots), to continue, delete, or start
+    /// through the game's own new-campaign popup.
     /// </summary>
     internal class CampaignScreen : MonoBehaviour
     {
@@ -64,8 +63,7 @@ namespace BadNorthMP.UI
                 if (save == null)
                     continue;
                 CampaignSaveMeta target = save;
-                string name = DisplayName(save);
-                GameUi.AddPopupButton(popup, $"Continue {name}", () => MultiplayerCampaigns.Continue(target), closes: true);
+                GameUi.AddPopupButton(popup, $"Continue {DisplayName(save)}", () => MultiplayerCampaigns.Continue(target), closes: true);
             }
             if (MultiplayerCampaigns.FreeSlot >= 0)
                 GameUi.AddPopupButton(popup, "New campaign", MultiplayerCampaigns.StartNew, closes: true);
