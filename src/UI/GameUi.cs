@@ -97,7 +97,7 @@ namespace BadNorthMP.UI
                     return;
                 }
             }
-            ModLog.Warn($"Couldn't find '{term}' in {menu.GetType().Name}; Multiplayer button left at the end");
+            ModLog.Warn($"Couldn't find '{term}' in {menu.GetType().Name}; its button is left at the end");
         }
     }
 }

@@ -95,6 +95,38 @@ namespace BadNorthMP.UI
             return string.Join("/", parts.ToArray());
         }
 
+        /// <summary>
+        /// How far past the sides of <paramref name="card"/> its tabs reach when slid all the way out, in the units of
+        /// <paramref name="holder"/> (laid out cards need that much room each side, or a hovered card's tabs cover its
+        /// neighbours). 0 for a card without animated tabs.
+        /// </summary>
+        public static float Reach(GameObject holder, RectTransform card)
+        {
+            var animated = holder.GetComponent<CardTabs>();
+            if (!animated) return 0f;
+            float was = animated.expanded;
+            animated.expanded = 1f;
+            animated.Apply();
+            var space = holder.transform;
+            var corners = new Vector3[4];
+            card.GetWorldCorners(corners);
+            float left = space.InverseTransformPoint(corners[0]).x, right = space.InverseTransformPoint(corners[2]).x;
+            float reach = 0f;
+            foreach (Tab tab in animated.tabs)
+            {
+                if (!tab.expand) continue;
+                tab.expand.GetWorldCorners(corners);
+                foreach (Vector3 corner in corners)
+                {
+                    float x = space.InverseTransformPoint(corner).x;
+                    reach = Mathf.Max(reach, Mathf.Max(left - x, x - right));
+                }
+            }
+            animated.expanded = was;
+            animated.Apply();
+            return reach;
+        }
+
         private void OnEnable()
         {
             expanded = 0f;

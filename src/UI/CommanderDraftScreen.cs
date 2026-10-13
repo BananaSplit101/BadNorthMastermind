@@ -15,6 +15,8 @@ namespace BadNorthMP.UI
     {
         private static CommanderDraftScreen instance;
         private GameObject canvasObject, grid;
+        private RectTransform panel;
+        private const float PanelWidth = 1000f, MaxPanelWidth = 1860f, CardGap = 28f;
         private Text title, roster, hint, continueText;
         private Button ready;
 
@@ -184,7 +186,23 @@ namespace BadNorthMP.UI
                 Release(old);
                 rendered[i] = slot;
             }
+            SpaceCards(width);
             baking = false; generation = null;
+        }
+
+        /// <summary>
+        /// Room for the arrow tabs: a card under the mouse slides them out past its sides, over its neighbours unless each
+        /// card has that much room. The panel widens to fit.
+        /// </summary>
+        private void SpaceCards(float cardWidth)
+        {
+            float reach = 0f;
+            foreach (Slot slot in rendered) if (slot.card != null) reach = Mathf.Max(reach, slot.card.TabReach);
+            foreach (Slot slot in rendered)
+                if (slot.card != null && slot.card.root) slot.card.root.GetComponent<LayoutElement>().preferredWidth = cardWidth + 2f * reach;
+            float needed = rendered.Count * (cardWidth + 2f * reach) + Mathf.Max(0, rendered.Count - 1) * CardGap + 60f;
+            panel.sizeDelta = new Vector2(Mathf.Clamp(needed, PanelWidth, MaxPanelWidth), panel.sizeDelta.y);
+            ModLog.Info($"Commander cards: {rendered.Count} at {cardWidth:0} wide, arrow tabs reach {reach:0} past each side");
         }
 
         /// <summary>
@@ -237,10 +255,10 @@ namespace BadNorthMP.UI
             var shade = Node(canvasObject.transform, "Backdrop");
             GameStyle.Stretch((RectTransform)shade.transform);
             shade.AddComponent<Image>().color = new Color(0.12f, 0.12f, 0.12f, 0.78f);
-            var panel = Node(canvasObject.transform, "Commander Menu"); var rect = (RectTransform)panel.transform;
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f); rect.sizeDelta = new Vector2(1000, 900);
-            panel.AddComponent<Image>().color = new Color(0.76f, 0.72f, 0.66f);
-            var layout = panel.AddComponent<VerticalLayoutGroup>(); layout.padding = new RectOffset(30, 30, 24, 24);
+            var menu = Node(canvasObject.transform, "Commander Menu"); var rect = (RectTransform)menu.transform; panel = rect;
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f); rect.sizeDelta = new Vector2(PanelWidth, 900);
+            menu.AddComponent<Image>().color = new Color(0.76f, 0.72f, 0.66f);
+            var layout = menu.AddComponent<VerticalLayoutGroup>(); layout.padding = new RectOffset(30, 30, 24, 24);
             layout.spacing = 12; layout.childForceExpandHeight = false;
             title = Label(panel.transform, "Choose your commanders", 40, 58);
             roster = Label(panel.transform, "", 22, 160);
@@ -251,7 +269,7 @@ namespace BadNorthMP.UI
             continueText.horizontalOverflow = HorizontalWrapMode.Wrap;
             continueText.gameObject.SetActive(false);
             grid = Node(panel.transform, "Native Commander Cards"); grid.AddComponent<LayoutElement>().preferredHeight = 430;
-            var cardLayout = grid.AddComponent<HorizontalLayoutGroup>(); cardLayout.spacing = 12;
+            var cardLayout = grid.AddComponent<HorizontalLayoutGroup>(); cardLayout.spacing = CardGap;
             cardLayout.childAlignment = TextAnchor.MiddleCenter; cardLayout.childForceExpandWidth = false;
             cardLayout.childForceExpandHeight = false; cardLayout.childControlWidth = true; cardLayout.childControlHeight = true;
             hint = Label(panel.transform, "", 22, 65);

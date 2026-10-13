@@ -15,6 +15,8 @@ namespace BadNorthMP.UI
     internal sealed class NativeCommanderCard
     {
         public GameObject root;
+        /// <summary>How far the card's arrow tabs reach past each side when slid out (CardTabs.Reach).</summary>
+        public float TabReach;
 
         // The starting trait and item shown on the card (name and icon), updated in place when they change.
         private sealed class Carousel { public bool item; public Text name; public MaskedSprite icon; public Sprite emptySprite, emptyMask; }
@@ -207,6 +209,7 @@ namespace BadNorthMP.UI
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
             rect.sizeDelta = new Vector2(width, height);
             rect.anchoredPosition = Vector2.zero; rect.localScale = Vector3.one * scale;
+            card.TabReach = CardTabs.Reach(holder, rect);
             foreach (var arrow in arrows)
             {
                 int step = arrow.Value;

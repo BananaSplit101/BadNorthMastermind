@@ -50,6 +50,17 @@ namespace BadNorthMP.Patches
         }
     }
 
+    // The campaign map has its own pause menu: Report bug there too, after Codex.
+    [HarmonyPatch(typeof(CampaignMapOptions), "Initialize")]
+    internal static class MapMenuPatch
+    {
+        private static void Postfix(CampaignMapOptions __instance)
+        {
+            ButtonWidget button = MenuButtons.AddReportBug(__instance, null);
+            GameUi.PlaceAfter(__instance, button, "META_INVENTORY/TITLE");
+        }
+    }
+
     internal static class MenuButtons
     {
         public static ButtonWidget AddAfter(GeneratedMenu menu, string term)
@@ -75,7 +86,7 @@ namespace BadNorthMP.Patches
         }
 
         /// <summary>"Report bug", under Copy log: what happened, sent with everyone in the lobby's logs.</summary>
-        public static void AddReportBug(GeneratedMenu menu, ButtonWidget after) =>
+        public static ButtonWidget AddReportBug(GeneratedMenu menu, ButtonWidget after) =>
             Add(menu, "UI/PAUSE/RESUME", "Report bug", ReportsUi.OpenBugReport, after);
 
         // The term only satisfies AddButton; the plain label replaces it.
