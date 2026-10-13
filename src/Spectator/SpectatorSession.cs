@@ -1,6 +1,5 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
 using BadNorthMP.Net;
@@ -15,8 +14,8 @@ using Stack = Voxels.TowerDefense.Stack;
 namespace BadNorthMP.Spectator
 {
     /// <summary>
-    /// Mastermind side: loads the defender's campaign in memory and opens the same island as a spectator
-    /// (no local squads, no local raid), without touching the player's own save files.
+    /// Watchers: loads the leader's campaign in memory and opens the same island as a spectator (no local squads, no
+    /// local raid), without touching the player's own save files.
     /// </summary>
     internal class SpectatorSession : MonoBehaviour
     {
@@ -48,7 +47,7 @@ namespace BadNorthMP.Spectator
         private float nextProfileNotice;
         // The load in progress: which step it's on (for the log), and when it began. A load stuck longer than StuckLimit
         // is abandoned like a failed one; if a battle is still on, the leader is asked for it again (BattleRequest).
-        internal const float StuckLimit = 90f;
+        private const float StuckLimit = 90f; // seconds
         private string loadStep = "";
         private float loadStarted = -1f, nextStuckLog;
 
@@ -263,7 +262,6 @@ namespace BadNorthMP.Spectator
                 loadingAnnounced = false;
                 ModLog.Info("Spectator: live island ready, level " + Singleton<IslandGameplayManager>.instance.island.levelNode.index);
             }
-
         }
 
         /// <summary>The player's own profile has loaded (the game does that at its title screen).</summary>
@@ -404,9 +402,9 @@ namespace BadNorthMP.Spectator
         }
 
         /// <summary>
-        /// A load that throws, or that's still going after StuckLimit seconds, counts as failed. The game's own campaign
-        /// load has waits with no end (for its scene preloader, for its campaign manager): one that never ends would
-        /// otherwise leave the player on the loading screen for good.
+        /// A load that throws, or is still going after StuckLimit, counts as failed: the game's own campaign load has
+        /// endless waits (for its scene preloader, its campaign manager) that would leave the player on the loading
+        /// screen for good.
         /// </summary>
         private static IEnumerator GuardRoutine(IEnumerator routine, Action failed, Func<string> step)
         {
@@ -468,9 +466,8 @@ namespace BadNorthMP.Spectator
         }
 
         /// <summary>
-        /// CampaignManager.ClearCampaign, finished by hand when one of the game's exit hooks throws: a campaign whose
-        /// generation failed leaves some of them unset (the upgrade screen's portraits). Otherwise that campaign could
-        /// never be left, and every attempt failed the same way.
+        /// CampaignManager.ClearCampaign, finished by hand when one of the game's exit hooks throws (a campaign whose
+        /// generation failed leaves some unset, like the upgrade screen's portraits); otherwise it could never be left.
         /// </summary>
         private static void ClearCampaign(CampaignManager manager)
         {
@@ -490,8 +487,7 @@ namespace BadNorthMP.Spectator
             }
         }
 
-        /// <summary>The shared campaign failed to load several times in a row: stop trying, put the player's own
-        /// saves back, and say so.</summary>
+        /// <summary>After repeated failed loads: stop trying, put the player's own saves back, and say so.</summary>
         private void GiveUp()
         {
             ModLog.Error($"Spectator: the shared campaign failed to load {failures} times in a row; giving up until the game restarts");

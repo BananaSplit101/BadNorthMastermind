@@ -1,3 +1,4 @@
+using System;
 using HarmonyLib;
 using BadNorthMP.UI;
 using UnityEngine;
@@ -53,10 +54,7 @@ namespace BadNorthMP.Patches
     {
         public static ButtonWidget AddAfter(GeneratedMenu menu, string term)
         {
-            // The term only satisfies AddButton; SetPlainLabel replaces it.
-            ButtonWidget button = menu.AddButton(term, MultiplayerScreen.Open);
-            GameUi.SetPlainLabel(button, "Multiplayer");
-            button.SetHoverAudio(FabricID.uiHover);
+            ButtonWidget button = Add(menu, term, "Multiplayer", MultiplayerScreen.Open);
             GameUi.PlaceAfter(menu, button, term);
             ModLog.Info($"Added Multiplayer button to {menu.GetType().Name}");
             return button;
@@ -66,26 +64,28 @@ namespace BadNorthMP.Patches
         public static ButtonWidget AddCopyLog(GeneratedMenu menu, ButtonWidget after)
         {
             ButtonWidget button = null;
-            button = menu.AddButton("UI/PAUSE/RESUME", () =>
+            button = Add(menu, "UI/PAUSE/RESUME", "Copy log", () =>
             {
                 bool copied = LogCopy.Copy();
                 FabricWrapper.PostEvent(copied ? FabricID.settingChange : FabricID.uiError);
                 if (button) ButtonFlash.Show(button, copied ? "Log copied" : "Couldn't copy the log", "Copy log");
                 return true;
-            });
-            GameUi.SetPlainLabel(button, "Copy log");
-            button.SetHoverAudio(FabricID.uiHover);
-            if (after) button.transform.SetSiblingIndex(after.transform.GetSiblingIndex() + 1);
+            }, after);
             return button;
         }
 
         /// <summary>"Report bug", under Copy log: what happened, sent with everyone in the lobby's logs.</summary>
-        public static void AddReportBug(GeneratedMenu menu, ButtonWidget after)
+        public static void AddReportBug(GeneratedMenu menu, ButtonWidget after) =>
+            Add(menu, "UI/PAUSE/RESUME", "Report bug", ReportsUi.OpenBugReport, after);
+
+        // The term only satisfies AddButton; the plain label replaces it.
+        private static ButtonWidget Add(GeneratedMenu menu, string term, string label, Func<bool> action, ButtonWidget after = null)
         {
-            ButtonWidget button = menu.AddButton("UI/PAUSE/RESUME", ReportsUi.OpenBugReport);
-            GameUi.SetPlainLabel(button, "Report bug");
+            ButtonWidget button = menu.AddButton(term, action);
+            GameUi.SetPlainLabel(button, label);
             button.SetHoverAudio(FabricID.uiHover);
             if (after) button.transform.SetSiblingIndex(after.transform.GetSiblingIndex() + 1);
+            return button;
         }
     }
 
@@ -107,13 +107,13 @@ namespace BadNorthMP.Patches
 
         private void Update()
         {
-            if (until <= 0f || Time.unscaledTime < until) return;
-            until = 0f;
-            if (button) GameUi.SetPlainLabel(button, restore);
+            if (Time.unscaledTime >= until) Restore();
         }
 
         // Closing the menu mid-flash: it opens with the usual label next time.
-        private void OnDisable()
+        private void OnDisable() => Restore();
+
+        private void Restore()
         {
             if (until <= 0f) return;
             until = 0f;

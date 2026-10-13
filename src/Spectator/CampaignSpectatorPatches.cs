@@ -34,10 +34,9 @@ namespace BadNorthMP.Spectator
     {
         private static void Postfix(SuperUpgradeMenu __instance, ref bool __result)
         {
-            // While the menu is open or shows a commander: the commander it opens on is set up before the menu
-            // counts as open, and was getting upgrade buttons although it belonged to someone else. Its closing
-            // animation asks too, with no commander shown, to decide whether the coin counter goes back onto the map
-            // (natively it fades away only at game over); a "no" there loses the counter.
+            // While the menu is open or shows a commander: the one it opens on is set up before the menu counts as
+            // open. Its closing animation asks too (no commander shown) whether the coin counter goes back onto the
+            // map; a "no" there loses the counter.
             HeroDefinition shown = PartyUpgrades.Focused(__instance);
             if (!__result || (!__instance.isOpen && shown == null)) return;
             if (SpectatorSession.Active && !PartyUpgrades.RemoteMenu) __result = false;
@@ -118,9 +117,9 @@ namespace BadNorthMP.Spectator
         }
     }
 
-    // The map builds islands in the background as they come within reach (after every island) and saves what it
-    // worked out for them (seeds, houses). Every viewer's own map works out the same, so those saves only refresh
-    // the leader's snapshot for late joiners: sent loudly, they made everyone load the map a second time.
+    // The map builds islands in the background as they come within reach and saves what it worked out (seeds, houses).
+    // Every viewer's map works out the same, so those saves only refresh the leader's snapshot for late joiners: sent
+    // loudly, they made everyone load the map a second time.
     [HarmonyPatch(typeof(IslandGenerator), "InfiniteEnumerator")]
     internal static class IslandGeneratorQuietSavePatch
     {

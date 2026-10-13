@@ -1,8 +1,6 @@
-using System.Collections.Generic;
 using System.Reflection;
 using BadNorthMP.Game;
 using HarmonyLib;
-using Voxels;
 using Voxels.TowerDefense;
 
 namespace BadNorthMP.Patches
@@ -21,8 +19,8 @@ namespace BadNorthMP.Patches
         }
     }
 
-    // Leaving for the map mid-fight without a penalty is a restart too (the island stays open); the game only offers
-    // it before the fight or when restarts are on. Abandoning (commanders left behind) stays available.
+    // Leaving for the map mid-fight without a penalty keeps the island open, so it's a restart (and a retry) too; the
+    // game only offers it before the fight or when restarts are on. Abandoning (commanders left behind) stays allowed.
     [HarmonyPatch(typeof(LevelLeaver), nameof(LevelLeaver.ExitLevel))]
     internal static class NoRestartExitPatch
     {
@@ -31,16 +29,12 @@ namespace BadNorthMP.Patches
             if (Spectator.SpectatorSession.Active) return true;
             var manager = Singleton<IslandGameplayManager>.instance;
             if (manager && manager.states.loadout.active) return true;
-            // Back to the map and in again is a fresh go at the island too: it counts as a retry.
             return !RestartRules.Refuse("leave mid-fight") && !RetryLimit.Refuse("leave mid-fight");
         }
     }
 
-    /// <summary>
-    /// A party gets three retries on an island: the fourth is refused and the fight has to be won or lost. Leaving for the
-    /// map mid-fight (which keeps the island open to come back to) counts as one. The count starts again on the next
-    /// island. Single player keeps the game's own rule.
-    /// </summary>
+    // A party gets MaxRetries retries per island, then the fight has to be won or lost. Single player keeps the game's
+    // own rule.
     internal static class RetryLimit
     {
         public const int MaxRetries = 3;
@@ -69,10 +63,8 @@ namespace BadNorthMP.Patches
         }
     }
 
-    /// <summary>
-    /// "Allow level restarts" off really means off: the game's buttons already hide, and this refuses the restart itself
-    /// however it's reached (a debug command, another mod, a menu the game forgot to hide).
-    /// </summary>
+    // "Allow level restarts" off: the game only hides its buttons, so this refuses the restart however it's reached
+    // (a debug command, another mod, a menu the game forgot to hide).
     internal static class RestartRules
     {
         public static bool Allowed
