@@ -6,15 +6,14 @@ using UnityEngine;
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Steam lobby + P2P transport. Uses the Steamworks.NET bindings compiled into Assembly-CSharp;
-    /// the game's own SteamManager initialises Steam and pumps callbacks on the main thread.
+    /// Steam lobby + P2P transport, through the Steamworks.NET bindings in Assembly-CSharp. The game's own SteamManager
+    /// initialises Steam and pumps callbacks on the main thread.
     /// </summary>
     internal class SteamSession : MonoBehaviour
     {
         // The game's platform layer uses P2P channels 1-3 (SteamElements); stay clear of them.
         public const int Channel = 7;
         public const int MaxMembers = 5; // the mastermind and up to four defenders
-        private const string VersionKey = FriendLobbies.VersionKey;
         private const uint EnterResponseSuccess = 1;
 
         public static SteamSession Instance { get; private set; }
@@ -31,6 +30,7 @@ namespace BadNorthMP.Net
         /// <summary>A friend invited us to their lobby (inviter, lobby); UI.InvitePopup offers to join it.</summary>
         public event Action<CSteamID, CSteamID> InviteReceived = delegate { };
 
+        // Held so they stay registered: Steamworks.NET unregisters a callback once it's garbage collected.
         private Callback<LobbyEnter_t> lobbyEnter;
         private Callback<LobbyChatUpdate_t> lobbyChatUpdate;
         private Callback<LobbyDataUpdate_t> lobbyDataUpdate;
@@ -108,9 +108,7 @@ namespace BadNorthMP.Net
 
         public void Join(CSteamID lobby)
         {
-            if (!Ready || lobby == CSteamID.Nil || lobby == Lobby || lobby == pendingLobby)
-                return;
-            if (creatingLobby)
+            if (!Ready || creatingLobby || lobby == CSteamID.Nil || lobby == Lobby || lobby == pendingLobby)
                 return;
             Leave();
             pendingLobby = lobby;
@@ -118,7 +116,6 @@ namespace BadNorthMP.Net
             SteamMatchmaking.JoinLobby(lobby);
         }
 
-        /// <summary>Opens the Steam overlay's invite dialog for the current lobby.</summary>
         public void OpenInviteDialog()
         {
             if (InLobby)
@@ -159,8 +156,6 @@ namespace BadNorthMP.Net
         }
 
         public CSteamID Owner => InLobby ? SteamMatchmaking.GetLobbyOwner(Lobby) : CSteamID.Nil;
-
-        public string GetLobbyData(string key) => InLobby ? SteamMatchmaking.GetLobbyData(Lobby, key) : "";
 
         /// <summary>Only the lobby owner can write lobby data; Steam ignores it from anyone else.</summary>
         public void SetLobbyData(string key, string value)
@@ -207,7 +202,7 @@ namespace BadNorthMP.Net
             if (!InLobby)
                 return;
 
-            while (SteamNetworking.IsP2PPacketAvailable(out uint size, Channel))
+            while (SteamNetworking.IsP2PPacketAvailable(out _, Channel))
             {
                 if (!SteamNetworking.ReadP2PPacket(receiveBuffer, (uint)receiveBuffer.Length, out uint read, out CSteamID sender, Channel))
                     break;
@@ -241,7 +236,7 @@ namespace BadNorthMP.Net
             // The creator also receives LobbyEnter_t, which finishes the setup.
             pendingLobby = new CSteamID(result.m_ulSteamIDLobby);
             SteamMatchmaking.SetLobbyMemberLimit(pendingLobby, MaxMembers);
-            SteamMatchmaking.SetLobbyData(pendingLobby, VersionKey, Plugin.Version);
+            SteamMatchmaking.SetLobbyData(pendingLobby, FriendLobbies.VersionKey, Plugin.Version);
         }
 
         private void OnLobbyEnter(LobbyEnter_t result)
@@ -260,7 +255,7 @@ namespace BadNorthMP.Net
             }
 
             Lobby = lobby;
-            SteamMatchmaking.SetLobbyMemberData(lobby, "bnmp_client_version", Plugin.Version);
+            SteamMatchmaking.SetLobbyMemberData(lobby, Updater.VersionKey, Plugin.Version);
 
             // Lets friends use "Join Game" from their Steam friends list.
             SteamFriends.SetRichPresence("connect", "+connect_lobby " + lobby.m_SteamID);
@@ -336,11 +331,7 @@ namespace BadNorthMP.Net
             for (int i = 0; i < args.Length - 1; i++)
             {
                 if (args[i] == "+connect_lobby")
-                {
-                    try { return ulong.Parse(args[i + 1]); }
-                    catch (FormatException) { return 0; }
-                    catch (OverflowException) { return 0; }
-                }
+                    return ulong.TryParse(args[i + 1], out ulong lobby) ? lobby : 0;
             }
             return 0;
         }

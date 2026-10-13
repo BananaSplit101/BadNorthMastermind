@@ -13,12 +13,11 @@ using UnityEngine.Networking;
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Versions and updates. Everyone in a lobby must run the same version (each player's is in the lobby's member
-    /// data). New versions are the mod's GitHub releases: the newest release's latest.txt says which version it is,
-    /// and that release (tag v&lt;version&gt;) carries BadNorthMP.dll. A download must match the size and SHA-256
-    /// published with it; it waits next to the game until the player chooses Install and restart. Then the game closes, a small script swaps the
-    /// DLL in (keeping the old one as BadNorthMP.dll.previous) and starts the game again through Steam, back into the
-    /// same lobby.
+    /// Versions and updates. Everyone in a lobby must run the same version (each player's is in their lobby member
+    /// data). New versions are the mod's GitHub releases (latest.txt, and BadNorthMP.dll under tag v&lt;version&gt;). A
+    /// download must match the published size and SHA-256, and waits next to the game until the player chooses Install
+    /// and restart: UpdateInstall.ps1 swaps it in (keeping BadNorthMP.dll.previous) and restarts the game through
+    /// Steam, back into the same lobby.
     /// </summary>
     internal class Updater : MonoBehaviour
     {
@@ -26,7 +25,7 @@ namespace BadNorthMP.Net
         // GitHub redirects these to the release's files; UnityWebRequest follows the redirect.
         private const string LatestUrl = "https://github.com/" + Repo + "/releases/latest/download/latest.txt";
         private static string DllUrl(string version) => "https://github.com/" + Repo + "/releases/download/v" + version + "/BadNorthMP.dll";
-        private const string VersionKey = "bnmp_client_version";
+        public const string VersionKey = "bnmp_client_version"; // lobby member data
         private const float RecheckSeconds = 15f * 60f;
 
         /// <summary>
@@ -37,7 +36,6 @@ namespace BadNorthMP.Net
         public static bool Compatible { get; private set; }
         /// <summary>What the lobby's versions are, or how the update is going.</summary>
         public static string Status { get; private set; } = "";
-        /// <summary>The newest version on GitHub, once known.</summary>
         public static string LatestVersion => latest != null ? latest.version : null;
         public static bool UpdateAvailable => latest != null && ReleaseInfo.Newer(latest.version, Plugin.Version);
         public static bool Busy { get; private set; }
