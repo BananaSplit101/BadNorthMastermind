@@ -9,8 +9,8 @@ using Voxels.TowerDefense.ProfileInternals;
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Everything the mastermind needs to rebuild the defender's island: the defender's whole campaign save
-    /// (island generation depends on more than the seed) plus which level is being played.
+    /// Everything a watcher needs to rebuild the leader's island: the whole campaign save (island generation depends
+    /// on more than the seed) plus which level is being played.
     /// </summary>
     internal class BattleInfo
     {

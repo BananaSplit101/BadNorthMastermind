@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using BadNorthMP.Spectator;
 using HarmonyLib;
 using Steamworks;
@@ -47,12 +46,11 @@ namespace BadNorthMP.Net
                 SteamSession.Instance.Send(recipient, packet, reliable);
         }
 
-        /// <summary>Every frame: catch up a newly arrived (or newly chosen) mastermind.</summary>
+        /// <summary>Every frame: send the battle so far to each member who doesn't have it yet.</summary>
         public static void Update()
         {
-            if (!Active)
+            if (!Active || !Roles.IsDefender || !Roles.HasMastermind)
                 return;
-            if (!Roles.IsDefender || !Roles.HasMastermind) return;
             var members = SteamSession.Instance.Members();
             sentTo.RemoveWhere(member => !members.Contains(member));
             foreach (CSteamID recipient in members)
@@ -84,7 +82,7 @@ namespace BadNorthMP.Net
         }
     }
 
-    /// <summary>Mastermind side: receive the battle info and hand battle messages to the puppet world.</summary>
+    /// <summary>Watcher side: receive the battle info and hand battle messages to the puppet world.</summary>
     internal static class BattleSync
     {
         public static void Init()
@@ -93,7 +91,7 @@ namespace BadNorthMP.Net
             {
                 if (!Roles.WatchesBattle || sender != Roles.DefenderId) return;
                 byte[] payload = Chunker.Receive(r);
-                if (payload == null || !Roles.WatchesBattle || sender != Roles.DefenderId)
+                if (payload == null)
                     return;
                 ModLog.Info($"Received battle from {SteamSession.NameOf(sender)} ({payload.Length / 1024} KB)");
                 SpectatorSession.Instance.Watch(BattleInfo.FromBytes(payload));

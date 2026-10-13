@@ -7,10 +7,8 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Defenders mark spots on the island for each other (UI.PingWheel: hold the middle mouse button and pick what it
-    /// means, or just click it). Only the party's defenders send and see them, never the mastermind; in single player
-    /// they're shown just here. Each lasts a few seconds; a player has at most three up at once, and a burst of them is
-    /// cut short.
+    /// Defenders mark spots on the island for each other (UI.PingWheel). Only the party's defenders send and see them,
+    /// never the mastermind; in single player they're shown just here.
     /// </summary>
     internal static class Pings
     {
@@ -48,10 +46,7 @@ namespace BadNorthMP.Net
             }
         }
 
-        /// <summary>
-        /// A player's colour: their main commander's (the first they drafted, or in single player the campaign's first),
-        /// the colour of its banner, so everyone knows whose ping it is at a glance.
-        /// </summary>
+        /// <summary>A player's colour: their main commander's banner (the first they drafted; in single player the campaign's first).</summary>
         public static Color Colour(CSteamID player)
         {
             var heroes = Profile.campaign != null ? Profile.campaign.heroes : null;

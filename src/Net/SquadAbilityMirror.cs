@@ -11,10 +11,8 @@ namespace BadNorthMP.Net
 {
     /// <summary>
     /// Teammates' ability buttons follow the leader's abilities. A remote defender's squads are copies whose abilities
-    /// never run there (the clicks go to the leader), so their buttons never showed a cooldown, never used up a charge
-    /// and never saw the squad busy healing: they always looked ready, and the clicks the leader then refused looked like
-    /// abilities breaking at random. The leader sends each ability's state (DefenderTracker.SendSquadAbilities); here
-    /// the copy's cooldown and charges are set to match, and whatever else stops it on the leader stops it here too.
+    /// never run (the clicks go to the leader), so without this their buttons always looked ready. The copy's cooldown
+    /// and charges are set from the leader's, and whatever else stops an ability there stops it here too.
     /// </summary>
     internal static class SquadAbilityMirror
     {
