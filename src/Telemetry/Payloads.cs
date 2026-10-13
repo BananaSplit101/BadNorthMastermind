@@ -6,11 +6,8 @@ using System.Text;
 namespace BadNorthMP.Telemetry
 {
     /// <summary>
-    /// The request bodies PostHog takes, built from the spool:
-    /// - logs as OpenTelemetry JSON (POST /i/v1/logs): one resource per session (its meta: version, release channel,
-    ///   game, system), each line with its source, role, phase, lobby and incident codes as attributes;
-    /// - events (and errors) as a capture batch (POST /batch/), each already written as it happened;
-    /// - a feature flag request (POST /flags?v=2).
+    /// PostHog's request bodies: logs as OpenTelemetry JSON (POST /i/v1/logs, the session's meta as the resource),
+    /// events as a capture batch (POST /batch/) and the feature flag request (POST /flags?v=2).
     /// </summary>
     internal static class Payloads
     {

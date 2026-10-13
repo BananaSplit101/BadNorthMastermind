@@ -7,8 +7,8 @@ using System.Text;
 namespace BadNorthMP.Telemetry
 {
     /// <summary>
-    /// A small JSON writer for what we send PostHog (the game's JsonUtility can't write maps or lists of mixed values):
-    /// strings, numbers, booleans, null, dictionaries (string keys) and lists, nested as deep as needed.
+    /// A small JSON writer and reader for PostHog's requests and answers (the game's JsonUtility can't do maps or lists
+    /// of mixed values).
     /// </summary>
     internal static class Json
     {
@@ -34,7 +34,6 @@ namespace BadNorthMP.Telemetry
                 case ulong ul: sb.Append(ul.ToString(CultureInfo.InvariantCulture)); return;
                 case short sh: sb.Append(sh.ToString(CultureInfo.InvariantCulture)); return;
                 case byte by: sb.Append(by.ToString(CultureInfo.InvariantCulture)); return;
-                case Raw raw: sb.Append(raw.json); return;
                 case IDictionary<string, object> map:
                 {
                     sb.Append('{');
@@ -95,20 +94,6 @@ namespace BadNorthMP.Telemetry
             }
             sb.Append('"');
         }
-
-        /// <summary>Already-written JSON, put in as it is.</summary>
-        public sealed class Raw
-        {
-            public readonly string json;
-            public Raw(string json) { this.json = json; }
-        }
-
-        /// <summary>A map in the order things were added (handy for readable payloads).</summary>
-        public static Dictionary<string, object> Map() => new Dictionary<string, object>();
-
-        /// <summary>Unix time in nanoseconds as a string (OpenTelemetry's timeUnixNano).</summary>
-        public static string Nanos(DateTime utc) =>
-            ((utc.Ticks - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).Ticks) * 100L).ToString(CultureInfo.InvariantCulture);
 
         /// <summary>ISO 8601, UTC, to the millisecond (PostHog's timestamp).</summary>
         public static string Iso(DateTime utc) => utc.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);

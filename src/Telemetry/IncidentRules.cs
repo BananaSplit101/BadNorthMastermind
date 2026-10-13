@@ -4,8 +4,7 @@ using System.Text;
 namespace BadNorthMP.Telemetry
 {
     /// <summary>
-    /// When something going wrong becomes an incident (everyone in the lobby sends their logs under one code), and when
-    /// it doesn't, so a bad bug can't flood PostHog or the players' connections:
+    /// When something going wrong becomes an incident, so a bad bug can't flood PostHog or the players' connections:
     /// - within <see cref="MergeWindow"/> of another incident (ours or one we heard from the lobby), it joins that one;
     /// - an automatic one needs <see cref="AutoGap"/> since the last incident, and at most <see cref="MaxAuto"/> a session;
     /// - one the player reports themselves needs only <see cref="ManualGap"/> since their last report.

@@ -5,10 +5,9 @@ using UnityEngine;
 namespace BadNorthMP.Telemetry
 {
     /// <summary>
-    /// Errors to PostHog's error tracking: Unity's exceptions and errors (the game's, ours, other mods'), with their
-    /// stacks, and mods' error lines, with where they were logged from. Each distinct error (its fingerprint) goes once a
-    /// session, with the game's state then; repeats are counted. A new error of ours, or any in a lobby, starts an
-    /// incident; one error repeating many times a second (a flood, like the Viking-killer bug) does too.
+    /// Errors to PostHog's error tracking: Unity's exceptions and errors, and mods' error lines. Each distinct error (its
+    /// fingerprint) goes once a session, with the game's state then; repeats are counted. A new error of ours, any new
+    /// one in a lobby, or one error many times a second (a flood, like the Viking-killer bug) starts an incident.
     /// Errors can come from any thread: they wait in a queue for the main thread (Process).
     /// </summary>
     internal static class ErrorReporter
@@ -37,7 +36,7 @@ namespace BadNorthMP.Telemetry
             Enqueue(new Pending { condition = condition, stack = stackTrace, source = "Unity", handled = type != LogType.Exception });
         }
 
-        /// <summary>An error line from a mod (BepInEx): reported with the stack it was logged from.</summary>
+        /// <summary>An error line from a mod (BepInEx, any thread): reported with the stack it was logged from.</summary>
         public static void FromLog(string source, string message)
         {
             string stack = "";

@@ -9,9 +9,8 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Telemetry
 {
     /// <summary>
-    /// What the game was doing, for a report: this player's role, where they are (menu, map, loading, battle,
-    /// watching), the lobby, the party and loading state, the mastermind's view of the battle, the island. Read on the
-    /// main thread; anything that can't be read is left out rather than failing the report.
+    /// What the game was doing, for a report. Main thread only; anything that can't be read is left out rather than
+    /// failing the report.
     /// </summary>
     internal static class GameContext
     {

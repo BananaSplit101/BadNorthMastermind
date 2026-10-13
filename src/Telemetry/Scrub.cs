@@ -6,13 +6,14 @@ namespace BadNorthMP.Telemetry
 {
     /// <summary>
     /// What never leaves the player's computer: Steam names and IDs, and the Windows user name (in paths). Each lobby
-    /// member becomes a stable label, "player-3f9a2c", worked out from their Steam ID and the lobby, so every member's
-    /// report calls the same person the same thing (and a label can be matched across one lobby's reports, not traced
-    /// back to an account). Steam IDs we don't know are masked; "C:\Users\name\" becomes "C:\Users\&lt;user&gt;\".
-    /// Written without regular expressions (the game ships a trimmed System.dll).
+    /// member becomes a label, "player-3f9a2c", worked out from their Steam ID and the lobby, so every member's report
+    /// calls the same person the same thing (matched across one lobby's reports, not traced back to an account).
+    /// Steam IDs we don't know are masked; "C:\Users\name\" becomes "C:\Users\&lt;user&gt;\".
+    /// No regular expressions: the game ships a trimmed System.dll.
     /// </summary>
     internal static class Scrub
     {
+        // Learned on the main thread, used by Clean on the upload worker: names and labels are under the gate.
         private static readonly object gate = new object();
         // Longest names first, so "Jay" never eats the start of "Jayden".
         private static readonly List<KeyValuePair<string, string>> names = new List<KeyValuePair<string, string>>();

@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using BadNorthMP.Spectator;
 using HarmonyLib;
@@ -9,10 +8,9 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Traits
 {
     /// <summary>
-    /// Commander traits the mod adds (GMW's Traits Galore, ported with permission). They join the game's own list of
-    /// upgrades (ResourceList), which is how saves find a trait by name, how rescued commanders roll random traits and how
-    /// every player's game knows a shared campaign's traits. Their text joins the game's localization; their icons are
-    /// embedded. They never go into the player's profile, so removing the mod can't break it.
+    /// Commander traits the mod adds. They join the game's own list of upgrades (ResourceList): saves find a trait there
+    /// by name, rescued commanders roll from it, and every player's game knows a shared campaign's traits from it. They
+    /// never go into the player's profile, so removing the mod can't break it.
     /// </summary>
     internal static class CustomTraits
     {
@@ -50,9 +48,9 @@ namespace BadNorthMP.Traits
         }
 
         /// <summary>
-        /// A trait that was taken out. Saves find traits by name (SerializableHeroUpgrade.PostLoad), so a commander saved
-        /// with it loads with the replacement instead, and is saved under the replacement's name from then on. The old
-        /// name is only in the lookup, never in the list, so it's never rolled or offered again.
+        /// A trait that was taken out: saves find traits by name (SerializableHeroUpgrade.PostLoad), so a commander saved
+        /// with it loads with the replacement and is saved under the replacement's name from then on. The old name is
+        /// only in the lookup, not the list, so it's never rolled or offered again.
         /// </summary>
         public static void Retire(string id, string replacement)
         {

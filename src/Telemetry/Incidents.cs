@@ -9,14 +9,11 @@ using UnityEngine;
 namespace BadNorthMP.Telemetry
 {
     /// <summary>
-    /// "If someone gets a bug, send everyone's logs." Something going wrong (a new error, a problem our checks found, a
-    /// freeze, a crash, a bug report) becomes an incident with a code anyone can read out ("7F3K-Q2MD"), and everyone in
-    /// the lobby hears of it (MsgType.Incident). Each member, the one it happened to included:
-    /// - sends its recent log lines at once, as incident_log events (and again 30 s later, for what happened next);
-    /// - sends an incident_member event with its own view of the game then;
-    /// - tags its next minute of log lines with the code.
-    /// So every side of a multiplayer bug lands in PostHog under one code (tools/fetch-incident.py gets it all back).
-    /// Members with error reports turned off send nothing. IncidentRules keeps a bad bug from making incidents nonstop.
+    /// "If someone gets a bug, send everyone's logs." Something going wrong becomes an incident with a code anyone can
+    /// read out ("7F3K-Q2MD"), and everyone in the lobby hears of it (MsgType.Incident). Each member then sends its
+    /// recent log lines (incident_log, and again 30 s later) and its view of the game (incident_member), and tags its
+    /// next minute of log lines with the code, so every side of a multiplayer bug lands in PostHog under one code
+    /// (tools/fetch-incident.py). Members with error reports turned off send nothing.
     /// </summary>
     internal static class Incidents
     {
@@ -24,7 +21,7 @@ namespace BadNorthMP.Telemetry
         private const float AftermathAfter = 30f, TaggedFor = 60f;
         private const int LogBytes = 100 * 1024, SummaryLength = 200;
 
-        // What set an incident off, as sent to the lobby (a byte, so it never changes with a version).
+        // What set an incident off, sent to the lobby as its index: only ever add to the end.
         private static readonly string[] Triggers = { "other", "exception", "problem", "watchdog", "bug_report", "crash", "error_flood", "freeze" };
 
         private sealed class Open
@@ -125,10 +122,7 @@ namespace BadNorthMP.Telemetry
             }));
         }
 
-        /// <summary>
-        /// The log lines since the last sent for this incident (at first: the recent ones), the newest that fit in
-        /// 100 KB, as one incident_log event.
-        /// </summary>
+        /// <summary>The log lines since the last sent for this incident, the newest that fit in LogBytes, as one incident_log event.</summary>
         private static void SendLog(Open incident, bool aftermath)
         {
             List<string> lines = Reports.RecentLines(incident.sentUpTo, out long last);
