@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using BadNorthMP.Game;
 using BadNorthMP.Net;
 using BadNorthMP.Spectator;
-using HarmonyLib;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -13,25 +12,14 @@ using Voxels.TowerDefense.UI;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// The mastermind's battle screen, built from the game's own pieces and kept to the edges of the island:
-    /// - top: the wave and when it sails (white text, like the game's words over the island); the war chest coin;
-    /// - bottom: one round ability button per Viking type (left-click adds, right-click removes, shift for five;
-    ///   the bubble shows how many), and Send now, whose ring fills up as the wave's timer runs out;
-    /// - bottom left: commander buttons (deploy, select, then click a tile or a house);
-    /// - landing: shore tiles where ships fit glow blue; click one and it turns gold.
-    /// Commanding looks the way the game's own commanding of English squads does, as in GMW's Viking Invasion
-    /// (CommanderControls): a commander's Vikings glow under the mouse and tint while picked (click them to pick, or
-    /// its button), the game's tile grid shows while it takes orders (left- or right-click a tile sends it), and the
-    /// game's path line runs to wherever it was sent. Planning a landing shows the grid on the ship-ready shore only.
-    /// Clicks on the island come from the game's own pointer (it already ignores camera drags and UI), and the
-    /// war chest opens over everything (WarChestPopup).
+    /// The mastermind's battle screen (and the war chest coin on the campaign map), built from the game's own widgets
+    /// and kept to the edges of the island. Commanding borrows the game's look for English squads (CommanderControls).
     /// </summary>
     internal class MastermindPanel : MonoBehaviour
     {
         public static MastermindPanel Instance { get; private set; }
         private void Awake() => Instance = this;
 
-        /// <summary>The native upgrades button on the map opens the war chest for the mastermind.</summary>
         public static void OpenMapUpgrades()
         {
             if (Roles.IsMastermind) WarChestPopup.Open(battle: false);
@@ -103,11 +91,9 @@ namespace BadNorthMP.UI
         private readonly Dictionary<int, Vector2> glows = new Dictionary<int, Vector2>();
         private int hoveredCommander = -1;
         private CampaignMapUI nativeMap;
-        private float nextMapSearch, nextReferenceSearch;
-        private readonly Dictionary<int, VikingReference> references = new Dictionary<int, VikingReference>();
+        private float nextMapSearch;
         private readonly List<RaycastResult> hits = new List<RaycastResult>();
 
-        /// <summary>The game's campaign map UI, searched for at most once a second until found.</summary>
         private CampaignMapUI NativeMap()
         {
             if (!nativeMap && Time.unscaledTime >= nextMapSearch)
@@ -118,19 +104,7 @@ namespace BadNorthMP.UI
             return nativeMap;
         }
 
-        private static string Name(int type) => VikingCommanders.TypeName(type);
-
-        /// <summary>A loaded reference with an icon for a Viking type (commanders can be any unlocked type).</summary>
-        private VikingReference Reference(int type)
-        {
-            if (references.TryGetValue(type, out VikingReference found) && found) return found;
-            if (Time.unscaledTime < nextReferenceSearch) return null;
-            nextReferenceSearch = Time.unscaledTime + 2f;
-            foreach (VikingReference candidate in Resources.FindObjectsOfTypeAll<VikingReference>())
-                if (candidate && UnitIcons.Has(candidate) && MastermindUpgrades.ValidType(candidate.type))
-                    references[(int)candidate.type] = candidate;
-            return references.TryGetValue(type, out found) ? found : null;
-        }
+        private static VikingReference Reference(int type) => WarChestPopup.Reference(type);
 
         // ---- Frame ------------------------------------------------------------------------------
 
@@ -192,10 +166,7 @@ namespace BadNorthMP.UI
             Toast();
         }
 
-        /// <summary>
-        /// Replies from the leader appear as the game's banner (or a map notice). War chest rewards during the fight
-        /// only float a "+N" under the coin, so kills don't flood the screen.
-        /// </summary>
+        /// <summary>The leader's replies as the game's banner; war chest rewards only float a "+N" under the coin, so kills don't flood the screen.</summary>
         private void Toast()
         {
             if (MastermindNet.LastResultTime <= lastToast) return;
@@ -223,10 +194,7 @@ namespace BadNorthMP.UI
 
         // ---- Island input -----------------------------------------------------------------------
 
-        /// <summary>
-        /// Listen to the game's own pointer: it sits behind every other UI as a full-screen catcher, reports clicks
-        /// only (not camera drags), and never fires through buttons or popups.
-        /// </summary>
+        /// <summary>The game's own pointer: a full-screen catcher behind all UI that reports clicks only, never camera drags.</summary>
         private void HookPointer()
         {
             var manager = Singleton<IslandGameplayManager>.instance;
@@ -310,7 +278,6 @@ namespace BadNorthMP.UI
             }
         }
 
-        /// <summary>A click on a commander's Vikings picks it (Shift: adds or removes it; clicking the only picked one lets it go).</summary>
         private bool SelectCommanderAt(Vector2 mouse)
         {
             int id = CommanderUnderMouse(mouse);
@@ -342,10 +309,7 @@ namespace BadNorthMP.UI
             return found;
         }
 
-        /// <summary>
-        /// The game's commanding look, each frame: a commander's Vikings glow while the mouse is on them and tint while
-        /// it takes orders (as a defender squad does), and each one sent somewhere shows the game's path line there.
-        /// </summary>
+        /// <summary>Commanders' Vikings glow under the mouse and tint while picked; each one sent somewhere shows its path line.</summary>
         private void RefreshCommanderLook(Island island)
         {
             var state = MastermindNet.State.upgrades;
@@ -451,8 +415,8 @@ namespace BadNorthMP.UI
         }
 
         /// <summary>
-        /// With commanders picked: a house near the click means they all burn it; otherwise the first goes to the
-        /// tile and each other one to a free tile next to it (two commanders never hold the same tile).
+        /// A house near the click: the picked commanders all burn it. Otherwise the first goes to the tile and each
+        /// other one to a free tile next to it (two commanders never hold the same tile).
         /// </summary>
         private void OrderCommanders(Island island, Vector2 position)
         {
@@ -533,7 +497,7 @@ namespace BadNorthMP.UI
             bool live = fresh && s.inBattle && !s.done;
             float chest = fresh && s.upgrades != null ? s.upgrades.gold : 0f;
 
-            // A new wave opened: its plan starts empty and the timer ring starts over.
+            // A new wave opened: its plan starts empty.
             if (fresh && s.waveIndex != shownWave)
             {
                 if (shownWave >= 0) { landings.Clear(); PlanChanged(); }
@@ -572,9 +536,6 @@ namespace BadNorthMP.UI
             bool affordable = cost <= s.waveBudget + 0.001f;
             int planned = PlannedLandingCount();
             armyRow.gameObject.SetActive(fresh && !s.done);
-            // The wave's timer: its ring fills up as departure nears. Waves only ever sail on the timer.
-
-            // What this wave costs, always in view.
             costText.gameObject.SetActive(fresh && !s.done);
             costText.text = $"<color=#{(affordable ? "FFD36B" : "FF9E80")}>{cost}</color> / {budget} gold in this wave" +
                 (affordable ? $"   ·   {budget - cost} left" : "   ·   over budget");
@@ -592,10 +553,7 @@ namespace BadNorthMP.UI
             UpdateTileHighlights(island, beaches);
         }
 
-        /// <summary>
-        /// Landing shows on the island itself. Ship-ready shore tiles breathe blue until a landing is picked, then
-        /// fade back so the island stays readable; the pick is gold. While a commander takes orders they disappear.
-        /// </summary>
+        /// <summary>Ship-ready shore tiles breathe blue until a landing is picked, then fade; the pick is gold. Ordering hides them.</summary>
         private void UpdateTileHighlights(Island island, List<BeachChoice> beaches)
         {
             if (landTiles.Count == 0)
@@ -633,9 +591,8 @@ namespace BadNorthMP.UI
             }
             plannedTint.color = new Color(1f, 0.6f, 0.15f, ordering ? 0.25f : 0.6f);
 
-            // The game's own tile grid, the one an English squad gets: every tile while commanders take orders, the
-            // ship-ready shore while a landing is planned. Its hover lights the tile under the mouse (any tile while
-            // ordering, otherwise a shore one), but not while the mouse is on a commander's Vikings: that click picks.
+            // The game's tile grid: every tile while ordering, the ship-ready shore while planning. No hover while the
+            // mouse is on a commander's Vikings: that click picks.
             bool chest = WarChestPopup.IsOpen;
             NavSpot target = !chest && hoveredCommander < 0 && PointerOverIsland() ? island.navSpotter.NavSpotCast(Input.mousePosition) : null;
             NavSpot hover = target && (ordering || (planning && landTiles.Contains(target))) ? target : null;
@@ -698,8 +655,7 @@ namespace BadNorthMP.UI
         private int Cost()
         {
             int cost = 0;
-            foreach (int[] counts in landings.Values)
-                for (int i = 0; i < counts.Length && i < cards.Count; i++) cost += counts[i] * Economy.UnitCost(cards[i].type);
+            foreach (int[] counts in landings.Values) cost += Cost(counts);
             return cost;
         }
 
@@ -722,10 +678,7 @@ namespace BadNorthMP.UI
             return vikings;
         }
 
-        /// <summary>
-        /// A gold pin bobbing over the selected landing tile, and over every planned beach what lands there:
-        /// "6 Vikings · 24 gold".
-        /// </summary>
+        /// <summary>A gold pin bobbing over the selected landing tile, and over every planned beach "6 Vikings · 24 gold".</summary>
         private void RefreshLandPin()
         {
             var camera = Singleton<LevelCamera>.instance;
@@ -792,9 +745,8 @@ namespace BadNorthMP.UI
                 switch (commander.status)
                 {
                     case CommanderStatus.Deployed:
-                        bool fallen = Fallen(commander.id);
-                        button.Available = !fallen;
-                        button.caption.text = fallen ? "" : picked ? "Ordering" : "On island"; // a skull marks the fallen
+                        button.Available = !dead;
+                        button.caption.text = dead ? "" : picked ? "Ordering" : "On island"; // a skull marks the fallen
                         break;
                     case CommanderStatus.Resting:
                         button.Available = false;
@@ -818,10 +770,7 @@ namespace BadNorthMP.UI
         // Commanders whose Vikings have been seen on this island (their mirrored Vikings show up a moment after landing).
         private readonly HashSet<int> seenAlive = new HashSet<int>();
 
-        /// <summary>
-        /// A commander's tooltip, just how many Vikings it has: "9 Swordsmen"; on the island, how many are left
-        /// ("6 Swordsmen left", "None left"). Its trait shows on its flag, its state on its button.
-        /// </summary>
+        /// <summary>A commander's tooltip: "9 Swordsmen", or on the island how many are left ("6 Swordsmen left", "None left").</summary>
         public string CommanderCount(MasterUpgradeState.CommanderInfo commander)
         {
             if (commander.status == CommanderStatus.Deployed && builtFor)
@@ -874,7 +823,7 @@ namespace BadNorthMP.UI
             }
             if (!landings.TryGetValue(beachIndex, out int[] counts)) landings[beachIndex] = counts = new int[cards.Count];
             int index = cards.IndexOf(card);
-            int step = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? 5 : 1;
+            int step = Shift ? 5 : 1;
             int before = counts[index];
             if (button == PointerEventData.InputButton.Left)
             {
@@ -889,7 +838,7 @@ namespace BadNorthMP.UI
                     if (fits <= 0)
                     {
                         FabricWrapper.PostEvent("UI/InGame/Error");
-                        GameNotify.Post($"Not enough gold left in this wave: {Name((int)card.type.type)} costs {unit}, {Mathf.Max(0, Mathf.FloorToInt(left + 0.001f))} left", 2.5f);
+                        GameNotify.Post($"Not enough gold left in this wave: {VikingCommanders.TypeName((int)card.type.type)} costs {unit}, {Mathf.Max(0, Mathf.FloorToInt(left + 0.001f))} left", 2.5f);
                         return;
                     }
                     step = Mathf.Min(step, fits);
@@ -1005,7 +954,7 @@ namespace BadNorthMP.UI
 
         private void BuildCanvas()
         {
-            FindFont();
+            font = WarChestPopup.GameFont();
             canvasObject = new GameObject("BNMP Mastermind Canvas");
             DontDestroyOnLoad(canvasObject);
             var canvas = canvasObject.AddComponent<Canvas>();
@@ -1034,7 +983,6 @@ namespace BadNorthMP.UI
             commanderButtons.Clear();
             commanderRests.Clear();
             commanderSkulls.Clear();
-            commanderMarkers.Clear();
             builtFor = null; // rebuild the army row too
             battleBuilt = true;
             battleNative = NativeWidgets.HasRoundButton;
@@ -1059,7 +1007,7 @@ namespace BadNorthMP.UI
             chestGainRect.pivot = new Vector2(0.5f, 1f);
             chestGain.gameObject.SetActive(false);
 
-            // Bottom centre: one round button per Viking type (when the wave sails is in the text at the top).
+            // Bottom centre: one round button per Viking type, the wave's cost and what to do next above it.
             armyRow = Row(battleRoot.transform, "Army", new Vector2(0.5f, 0f), new Vector2(0f, 46f), 18f);
             costText = NativeWidgets.Text(battleRoot.transform, font, "", 28);
             Place(costText.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 180f));
@@ -1179,15 +1127,12 @@ namespace BadNorthMP.UI
         {
             foreach (UnitCard card in cards) if (card.button.root) Destroy(card.button.root);
             cards.Clear();
-            landings.Clear();
-            int index = 0;
             foreach (VikingReference type in Economy.AvailableTypes(island))
             {
                 var card = new UnitCard { type = type };
                 card.button = NativeRoundButton.Create(armyRow, 80f, font, click => CardClicked(card, click));
-                card.button.root.transform.SetSiblingIndex(index++); // Send now stays last
                 card.button.SetIcon(UnitIcons.Of(type));
-                card.button.SetTooltip(Name((int)type.type));
+                card.button.SetTooltip(VikingCommanders.TypeName((int)type.type));
                 card.button.caption.text = $"<color=#FFD36B>{Economy.UnitCost(type)}</color> gold";
                 cards.Add(card);
             }
@@ -1232,16 +1177,6 @@ namespace BadNorthMP.UI
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
             rect.offsetMin = rect.offsetMax = Vector2.zero;
-        }
-
-        private void FindFont()
-        {
-            font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            foreach (MainMenu menu in Resources.FindObjectsOfTypeAll<MainMenu>())
-            {
-                var prefab = Traverse.Create(menu).Field<ButtonWidget>("textButtonPrefab").Value;
-                if (prefab && prefab.label && prefab.label.font) { font = prefab.label.font; break; }
-            }
         }
     }
 
