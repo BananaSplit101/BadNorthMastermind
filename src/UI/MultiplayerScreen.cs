@@ -44,6 +44,8 @@ namespace BadNorthMP.UI
         /// <summary>Button callback for the menu entries. Returns true so the game plays its click sound.</summary>
         public static bool Open()
         {
+            // The first time: the error reports notice, then this screen.
+            if (ReportsUi.Ask(() => Open())) return true;
             if (PartyFlow.Active && PartyFlow.State.phase == 1 && Updater.Compatible)
             { CommanderDraftScreen.Open(); return true; }
             if (instance && !instance.overlay)
@@ -152,6 +154,10 @@ namespace BadNorthMP.UI
                 AddButton("Leave lobby", Session.Leave);
             }
 
+            // Error reports: a bug report from anywhere; the switch outside a lobby, where there's room.
+            AddButton("Report bug", () => ReportsUi.OpenBugReport());
+            if (!Session.InLobby) AddButton(ReportsUi.SwitchLabel, ReportsUi.Switch);
+
             popup.AddCancelButton();
             popup.SetCloseAction(() =>
             {
@@ -170,7 +176,7 @@ namespace BadNorthMP.UI
         {
             if (!Session.Ready)
                 return "wait";
-            string update = $"{Updater.UpdateAvailable}/{Updater.Busy}/{Updater.Staged}/";
+            string update = $"{Updater.UpdateAvailable}/{Updater.Busy}/{Updater.Staged}/{ModConfig.SendReports.Value}/";
             if (Session.InLobby && !Updater.Compatible)
                 return update + "mismatch";
             if (Spectator.SpectatorSession.Active)

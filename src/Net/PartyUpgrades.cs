@@ -223,7 +223,7 @@ namespace BadNorthMP.Net
                     hero.TryPurchase(def, level, ref unlimited);
                     if (FromInventory(def, level)) RemoveFromInventory(def);
                 }
-                else ModLog.Warn("Upgrade from the leader didn't apply here: " + hero.dbgName + " " + name + " level " + level);
+                else ModLog.Problem("upgrade_desync", "Upgrade from the leader didn't apply here: " + hero.dbgName + " " + name + " level " + level);
             }
             Profile.campaign.coinBank = coins;
             RefreshMenu();

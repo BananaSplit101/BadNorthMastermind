@@ -200,7 +200,7 @@ namespace Voxels.TowerDefense.UI
 }
 namespace BadNorthMP
 {
-    public static class ModLog { public static int Errors; public static void Info(string s) { } public static void Warn(string s) { Errors++; } public static void Error(string s) { Errors++; } }
+    public static class ModLog { public static int Errors; public static void Info(string s) { } public static void Warn(string s) { Errors++; } public static void Problem(string category, string s) { Errors++; } public static void Error(string s) { Errors++; } }
 }
 namespace BadNorthMP.UI
 {

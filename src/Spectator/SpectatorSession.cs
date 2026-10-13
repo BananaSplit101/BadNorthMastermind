@@ -51,6 +51,9 @@ namespace BadNorthMP.Spectator
         internal const float StuckLimit = 90f;
         private string loadStep = "";
         private float loadStarted = -1f, nextStuckLog;
+
+        /// <summary>The step a load is on (empty when not loading): for error reports.</summary>
+        public static string LoadStep => Instance && Instance.loadStarted >= 0f ? Instance.loadStep : "";
         // The leader's battle is under way (it began and hasn't ended), whether or not this player made it in.
         private bool battleUnderway;
         private float nextBattleRequest;

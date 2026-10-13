@@ -51,7 +51,7 @@ namespace BadNorthMP.Game
             var agent = ship.agents[0];
             if (!agent) return;
             var updater = Singleton<AgentUpdater>.instance;
-            ModLog.Warn("Crew still aboard: updater=" + (updater && updater.isActiveAndEnabled) +
+            ModLog.Problem("crew_aboard", "Crew still aboard: updater=" + (updater && updater.isActiveAndEnabled) +
                 " spawned=" + agent.spawned.active + " grounded=" + agent.groundedState.active +
                 " brain=" + agent.brain.brainState.active + " order=" + agent.brain.order +
                 " orderDist=" + agent.orderDist + " orderDir=" + agent.orderDir +

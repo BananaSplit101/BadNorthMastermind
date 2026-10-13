@@ -187,7 +187,7 @@ namespace BadNorthMP.Net
                     LastStateTime = Time.unscaledTime;
                     if (upgradePending && received.upgrades.revision > pendingUpgradeRevision) upgradePending = false;
                 }
-                catch (System.Exception e) { ModLog.Warn("Ignored invalid mastermind state: " + e.Message); }
+                catch (System.Exception e) { ModLog.Problem("invalid_mastermind_state", "Ignored invalid mastermind state: " + e.Message); }
             });
             Router.On(MsgType.Result, (sender, r) =>
             {

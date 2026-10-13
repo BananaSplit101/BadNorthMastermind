@@ -200,7 +200,7 @@ namespace BadNorthMP.Game
                 int planned = beaches.FindIndex(b => b.tileIndex == landing.tile);
                 if (!TryAtBeaches(Crew(landing.units), planned, beaches, false, out int count, out string where, out string error))
                 {
-                    ModLog.Warn($"Mastermind: a planned landing of wave {wave} couldn't land anywhere: {error}");
+                    ModLog.Problem("landing_failed", $"Mastermind: a planned landing of wave {wave} couldn't land anywhere: {error}");
                     continue;
                 }
                 spent += landing.Cost;

@@ -83,6 +83,10 @@ namespace BadNorthMP.Net
         VoteState = 63,      // leader -> all: int token, int seed, float secondsLeft, float launchSecondsLeft, bool nextTurnAllowed, byte count, (ulong player, int option)*, int decided
         DefenderMove = 44, // int hero index, int navspot index
         Result = 43,      // defender -> mastermind: bool ok, string message
+
+        // Error reports: anyone -> all: string incidentId, byte trigger, string summary. Everyone sends their log under
+        // the code (Telemetry.Incidents). Read across versions (Router lets it past the version check): never change it.
+        Incident = 90,
     }
 
     internal static class SoundTarget

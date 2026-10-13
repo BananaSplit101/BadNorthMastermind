@@ -121,7 +121,7 @@ namespace Voxels.TowerDefense.Ballistics
 }
 namespace BadNorthMP
 {
-    public static class ModLog { public static void Info(string s) { } public static void Error(string s) { } public static void Warn(string s) { } }
+    public static class ModLog { public static void Info(string s) { } public static void Error(string s) { } public static void Warn(string s) { } public static void Problem(string category, string s) { } }
     public static class GameAccess { public static Voxels.TowerDefense.Island CurrentIsland; }
 }
 namespace BadNorthMP.Spectator { public static class SpectatorSession { public static bool Active; } }

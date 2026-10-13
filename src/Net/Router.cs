@@ -23,8 +23,9 @@ namespace BadNorthMP.Net
         {
             if (data.Length == 0)
                 return;
-            // Only a player on another version is ignored; everyone else carries on.
-            if (!Updater.IsCompatible(sender)) return;
+            // Only a player on another version is ignored; everyone else carries on. An error report's incident still
+            // gets through: a version mismatch is just when both sides' logs are wanted.
+            if (!Updater.IsCompatible(sender) && data[0] != (byte)MsgType.Incident) return;
             Handle(sender, data);
         }
 
@@ -42,7 +43,7 @@ namespace BadNorthMP.Net
                 if (handlers.TryGetValue(type, out Handler handler))
                     handler(sender, reader);
                 else
-                    ModLog.Warn($"No handler for message {type} from {SteamSession.NameOf(sender)}");
+                    ModLog.Problem("no_handler", $"No handler for message {type} from {SteamSession.NameOf(sender)}");
             }
         }
     }

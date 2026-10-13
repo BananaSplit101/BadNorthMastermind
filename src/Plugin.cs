@@ -18,6 +18,8 @@ namespace BadNorthMP
             ModLog.Init(Logger);
             GameErrors.Capture();
             ModConfig.Bind(Config);
+            Telemetry.Reports.Begin();
+            gameObject.AddComponent<Telemetry.Reports>();
 
             // GMW's traits first: saves and shared campaigns name their traits, so the game must know them before loading any.
             try

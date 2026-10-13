@@ -131,7 +131,7 @@ namespace BadNorthMP.Net
                 else waiting.Clear();
                 if (waiting.Count > 0 && Time.unscaledTime - since > Timeout)
                 {
-                    ModLog.Warn($"Starting island {level} without {Names(waiting)}: still loading after {Timeout:0} s");
+                    ModLog.Problem("island_load_timeout", $"Starting island {level} without {Names(waiting)}: still loading after {Timeout:0} s");
                     MultiplayerGame.Instance.Announce($"Starting without {Names(waiting)} (still loading)");
                     waiting.Clear();
                 }
@@ -218,7 +218,7 @@ namespace BadNorthMP.Net
                 else mapWaiting.Clear();
                 if (mapWaiting.Count > 0 && Time.unscaledTime - mapSince > MapTimeout)
                 {
-                    ModLog.Warn($"Voting without {Names(mapWaiting)}: still loading the map after {MapTimeout:0} s");
+                    ModLog.Problem("map_load_timeout", $"Voting without {Names(mapWaiting)}: still loading the map after {MapTimeout:0} s");
                     MultiplayerGame.Instance.Announce($"Continuing without {Names(mapWaiting)} (still loading the map)");
                     mapWaiting.Clear();
                 }

@@ -275,7 +275,7 @@ namespace BadNorthMP.Net
             float silent = Time.unscaledTime - lastStateAt;
             if (silent < 8f || Time.unscaledTime < nextRecover) return;
             nextRecover = Time.unscaledTime + 8f;
-            ModLog.Warn($"No party updates from the host for {silent:0} s; reconnecting");
+            ModLog.Problem("party_silent", $"No party updates from the host for {silent:0} s; reconnecting");
             Session.ResetConnection(Session.Owner);
             Session.Send(Session.Owner, Packet.Build(MsgType.PartyStateRequest, w => { }));
         }

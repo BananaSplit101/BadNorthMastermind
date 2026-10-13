@@ -29,6 +29,22 @@ The mod checks this repository's releases for a new version and updates itself:
 
 Everyone in a lobby must run the same version.
 
+## Error reports
+To help fix bugs, the mod sends error logs to [PostHog](https://posthog.com) (US cloud). The first time you press Play, a popup tells you, with *Leave it on* and *Turn off*. You can change it later on the Multiplayer screen (*Error reports: On/Off*) or in `BepInEx/config/com.bananasplit.badnorthmp.cfg` (`[Diagnostics] Send error reports`). Turned off, nothing is sent, including anything kept from before.
+
+**What's sent:**
+- the session's log lines (the mod's, other mods', the game's);
+- errors, with their stack traces;
+- what the game was doing: your role, menu, map or battle, the island, loading and party state, frame rate;
+- the mod version, the game and BepInEx versions, the installed mods, your OS, CPU, GPU and memory;
+- events like joining a lobby or starting an island.
+
+When something goes wrong, it becomes an *incident*: everyone in the lobby sends their recent log under one code, so every side of a multiplayer bug is there. **Report bug** (pause menu and Multiplayer screen) does the same with your description and gives you the code.
+
+**What's never sent:** Steam names and Steam IDs (each player becomes a label like `player-3f9a2c`), and your Windows user name. Reports are tied to a random install id, not your Steam account. Logs wait in `BepInEx/BadNorthMP-logs/` until they're sent, so a crash's last lines go at the next launch.
+
+For the developer: `python tools/fetch-incident.py <code>` downloads an incident, every member's log included, into `dist/incidents/<code>/`. It needs a PostHog personal API key in `POSTHOG_PERSONAL_KEY`; never commit the key.
+
 ## Building
 Requirements:
 - Bad North installed with BepInEx 5 x86 (install the zip above once);
@@ -43,7 +59,7 @@ The build copies the DLL to the game's `BepInEx/plugins/BadNorthMP/`. Close the 
 
 ### Tests and checks
 ```
-pwsh tools/test-mastermindupgrades.ps1   # and every other tools/test-*.ps1
+pwsh tools/test-mastermindupgrades.ps1   # and every other tools/test-*.ps1 (test-telemetry.ps1: error reports)
 python tools/check-game-patch-targets.py # every Harmony/reflection target exists in the installed game
 python tools/check-battle-messages.py    # battle-stream message ids stay in their range
 python tools/check-spectator-gate.py

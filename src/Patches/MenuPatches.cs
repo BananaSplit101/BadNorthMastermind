@@ -14,13 +14,26 @@ namespace BadNorthMP.Patches
         private static void Postfix(MainMenu __instance) => MenuButtons.AddAfter(__instance, "UI/MAIN_MENU/PLAY");
     }
 
+    // The first Play: the error reports notice, then Play as usual.
+    [HarmonyPatch(typeof(MainMenu), "Play")]
+    internal static class MainMenuPlayPatch
+    {
+        private static bool Prefix(MainMenu __instance, ref bool __result)
+        {
+            if (!ReportsUi.Ask(() => Traverse.Create(__instance).Method("Play").GetValue())) return true;
+            __result = true;
+            return false;
+        }
+    }
+
     [HarmonyPatch(typeof(PauseMenu), "Initialize")]
     internal static class PauseMenuPatch
     {
         private static void Postfix(PauseMenu __instance)
         {
             ButtonWidget multiplayer = MenuButtons.AddAfter(__instance, "UI/PAUSE/RESUME");
-            MenuButtons.AddCopyLog(__instance, multiplayer);
+            ButtonWidget copyLog = MenuButtons.AddCopyLog(__instance, multiplayer);
+            MenuButtons.AddReportBug(__instance, copyLog);
         }
     }
 
@@ -38,7 +51,7 @@ namespace BadNorthMP.Patches
         }
 
         /// <summary>"Copy log", under the Multiplayer button: the whole log on the clipboard for a bug report.</summary>
-        public static void AddCopyLog(GeneratedMenu menu, ButtonWidget after)
+        public static ButtonWidget AddCopyLog(GeneratedMenu menu, ButtonWidget after)
         {
             ButtonWidget button = null;
             button = menu.AddButton("UI/PAUSE/RESUME", () =>
@@ -49,6 +62,16 @@ namespace BadNorthMP.Patches
                 return true;
             });
             GameUi.SetPlainLabel(button, "Copy log");
+            button.SetHoverAudio(FabricID.uiHover);
+            if (after) button.transform.SetSiblingIndex(after.transform.GetSiblingIndex() + 1);
+            return button;
+        }
+
+        /// <summary>"Report bug", under Copy log: what happened, sent with everyone in the lobby's logs.</summary>
+        public static void AddReportBug(GeneratedMenu menu, ButtonWidget after)
+        {
+            ButtonWidget button = menu.AddButton("UI/PAUSE/RESUME", ReportsUi.OpenBugReport);
+            GameUi.SetPlainLabel(button, "Report bug");
             button.SetHoverAudio(FabricID.uiHover);
             if (after) button.transform.SetSiblingIndex(after.transform.GetSiblingIndex() + 1);
         }

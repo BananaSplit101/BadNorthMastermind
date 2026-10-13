@@ -177,7 +177,7 @@ namespace BadNorthMP.Net
                 catch (Exception e)
                 {
                     snapshot = null;
-                    ModLog.Warn("Campaign sync capture failed: " + e.Message);
+                    ModLog.Problem("campaign_sync_capture", "Campaign sync capture failed: " + e);
                     nextPoll = Time.unscaledTime + 5f;
                     return;
                 }
@@ -285,7 +285,7 @@ namespace BadNorthMP.Net
             catch (Exception e)
             {
                 parts = null;
-                ModLog.Warn("Campaign sync receive failed: " + e.Message);
+                ModLog.Problem("campaign_sync_receive", "Campaign sync receive failed: " + e);
             }
         }
     }

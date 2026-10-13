@@ -33,7 +33,7 @@ namespace BadNorthMP
         {
             if (textures.TryGetValue(name, out Texture2D cached) && cached) return cached;
             byte[] bytes = Bytes(name);
-            if (bytes == null) { ModLog.Warn("Missing embedded asset " + name); return null; }
+            if (bytes == null) { ModLog.Problem("missing_asset", "Missing embedded asset " + name); return null; }
             var texture = new Texture2D(2, 2) { filterMode = filter };
             texture.LoadImage(bytes);
             textures[name] = texture;

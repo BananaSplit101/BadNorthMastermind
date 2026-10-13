@@ -14,5 +14,15 @@ namespace BadNorthMP
         public static void Warn(string message) => source?.LogWarning(message);
 
         public static void Error(string message) => source?.LogError(message);
+
+        /// <summary>
+        /// Something that shouldn't happen (main thread): a warning here, and an error report with everyone in the
+        /// lobby's logs (Telemetry.Reports). <paramref name="category"/> groups the reports ("invalid_mastermind_state").
+        /// </summary>
+        public static void Problem(string category, string message)
+        {
+            Warn(message);
+            Telemetry.Reports.Problem(category, message);
+        }
     }
 }

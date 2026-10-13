@@ -104,7 +104,7 @@ namespace BadNorthMP.Game {
  public static IEnumerator LoadHeaders(){yield break;}public static void Continue(Voxels.TowerDefense.ProfileInternals.CampaignSaveMeta m){Voxels.TowerDefense.Profile.activeCampaignMeta=m;Voxels.TowerDefense.Profile.campaign=new Voxels.TowerDefense.ProfileInternals.CampaignSave{seed=99,heroes=new List<Voxels.TowerDefense.HeroDefinition>()};for(int i=0;i<10;i++)Voxels.TowerDefense.Profile.campaign.heroes.Add(new Voxels.TowerDefense.HeroDefinition(i){recruited=i<2});}public static void Remember(Voxels.TowerDefense.ProfileInternals.CampaignSaveMeta m){}
 }}
 namespace BadNorthMP {
- public static class ModLog {public static void Warn(string s){}public static void Info(string s){}}
+ public static class ModLog {public static void Warn(string s){}public static void Problem(string c,string s){}public static void Info(string s){}}
  public static class FabricWrapper{public static void PostEvent(string s){}}
  public static class GameAccess{public static string Describe(object o){return "test";}public static bool IsPlaying=true;public static Voxels.TowerDefense.Island CurrentIsland=new Voxels.TowerDefense.Island();public static List<Voxels.TowerDefense.Squad> PlayerSquads=new List<Voxels.TowerDefense.Squad>();}
 }

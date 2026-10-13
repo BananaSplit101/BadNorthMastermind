@@ -14,9 +14,21 @@ namespace BadNorthMP
         public static ConfigEntry<bool> HideEnemyLineup, ShowUnitIntegrity;
         public static ConfigEntry<int> MaxDeployed;
         public static ConfigEntry<float> PerExtraDefender;
+        public static ConfigEntry<bool> SendReports, ReportsNoticeShown;
+        public static ConfigEntry<string> ReportInstallId, ReportToken;
 
         public static void Bind(ConfigFile config)
         {
+            SendReports = config.Bind("Diagnostics", "Send error reports", true,
+                "Send error logs automatically to help fix bugs (PostHog): the mod's log, errors, and what the game was doing, " +
+                "with Steam names, Steam IDs and your Windows user name taken out. When something goes wrong, everyone in the " +
+                "lobby sends their recent log under one code. Off: nothing is sent.");
+            ReportsNoticeShown = config.Bind("Diagnostics", "Notice shown", false,
+                "Whether you've been told about error reports (a popup the first time you press Play). Nothing is sent before.");
+            ReportInstallId = config.Bind("Diagnostics", "Install id", "",
+                "A random id for this install, not your Steam account: it ties your reports together.");
+            ReportToken = config.Bind("Diagnostics", "Project token", "",
+                "Where error reports go (a PostHog project token). Empty: the mod's own project.");
             TraitDifficulty = config.Bind("Viking commanders", "Trait strength", TraitStrength.Normal,
                 "How strongly a Viking commander's trait buffs (and nerfs) its squad. Used by the campaign leader.");
             SailIn = config.Bind("Commanders sail in", "Enabled", true,
