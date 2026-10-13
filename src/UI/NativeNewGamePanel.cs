@@ -42,9 +42,17 @@ namespace BadNorthMP.UI
             if (!panel) return Fail("its settings and button aren't in one panel");
 
             // What to change, found on the original (the copy loses the scripts that know).
+            // The difficulty's decorator draws its value and arrows: on the widget, or anywhere in the settings pointing at it.
             var decorator = difficultyWidget.GetComponentInChildren<MultiSelectWidget_Decorator>(true);
+            if (!decorator)
+                foreach (var candidate in panel.GetComponentsInChildren<MultiSelectWidget_Decorator>(true))
+                    if (Traverse.Create(candidate).Field<MultiSelectWidget>("widget").Value == difficultyWidget) { decorator = candidate; break; }
             var decorated = decorator ? Traverse.Create(decorator) : null;
             string valuePath = Path(panel, decorated?.Field<RectTransform>("valueReference").Value);
+            // Without it: the first text in the widget that isn't its label.
+            if (valuePath == null)
+                foreach (var text in difficultyWidget.GetComponentsInChildren<Text>(true))
+                    if (text != difficultyWidget.label) { valuePath = Path(panel, text.transform); break; }
             var arrowPaths = new List<string>
             {
                 Path(panel, decorated?.Field<UIClickable>("decrementClick").Value?.transform),
@@ -61,9 +69,17 @@ namespace BadNorthMP.UI
                 restartsLabelPath = Path(panel, toggles[0].label ? toggles[0].label.transform : null);
             }
             if (toggles.Count > 1) tutorialPath = Path(panel, toggles[1].transform);
-            var begin = buttons.GetComponentInChildren<ButtonWidget>(true);
-            string beginPath = Path(panel, begin ? begin.transform : null), labelPath = Path(panel, begin && begin.label ? begin.label.transform : null);
-            if (valuePath == null || beginPath == null || labelPath == null) return Fail("its difficulty or Begin button wasn't found");
+            Widget begin = buttons.GetComponentInChildren<ButtonWidget>(true);
+            if (!begin) begin = buttons.GetComponentInChildren<Widget>(true);
+            Text beginText = begin ? (begin.label ? begin.label : begin.GetComponentInChildren<Text>(true)) : null;
+            string beginPath = Path(panel, begin ? begin.transform : null), labelPath = Path(panel, beginText ? beginText.transform : null);
+            if (valuePath == null || beginPath == null || labelPath == null)
+            {
+                Fail("missing:" + (valuePath == null ? " the difficulty's text" : "") + (beginPath == null ? " the Begin button" : "") +
+                    (labelPath == null ? " the Begin button's text" : ""));
+                Describe(panel);
+                return null;
+            }
 
             // Copied inactive and stripped of scripts before it's shown (the game's would wake up and register themselves).
             var clone = NativeWidgets.GraphicsCopy(panel.gameObject, null);
@@ -190,6 +206,28 @@ namespace BadNorthMP.UI
         }
 
         private static bool warned, reported;
+
+        /// <summary>The panel's insides, once, in the log: what's there when a part isn't found (to fix it from a log).</summary>
+        private static void Describe(Transform panel)
+        {
+            if (described) return;
+            described = true;
+            var lines = new List<string>();
+            void Walk(Transform node, string path, int depth)
+            {
+                if (lines.Count >= 120 || depth > 7) return;
+                var parts = new List<string>();
+                foreach (Component component in node.GetComponents<Component>())
+                    if (component && !(component is Transform)) parts.Add(component.GetType().Name);
+                var text = node.GetComponent<Text>();
+                lines.Add($"{path}{(node.gameObject.activeSelf ? "" : " (off)")}: {string.Join(", ", parts.ToArray())}{(text ? " \"" + text.text + "\"" : "")}");
+                for (int i = 0; i < node.childCount; i++) Walk(node.GetChild(i), path + "/" + i + ":" + node.GetChild(i).name, depth + 1);
+            }
+            Walk(panel, panel.name, 0);
+            ModLog.Info("Commander draft: the game's New Game panel holds\n  " + string.Join("\n  ", lines.ToArray()));
+        }
+
+        private static bool described;
 
         private static NativeNewGamePanel Fail(string why)
         {
