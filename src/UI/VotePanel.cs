@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Text;
 using BadNorthMP.Net;
@@ -10,20 +9,18 @@ using UnityEngine.UI;
 using Voxels.TowerDefense;
 using Voxels.TowerDefense.UI;
 using Voxels.TowerDefense.UI.UpgradeScreen;
-using Stack = Voxels.TowerDefense.Stack;
 
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// The party's island vote on the campaign map: a header with every voter's Steam picture (dimmed until they
-    /// vote) and a Next Turn button, and each voted island's voters shown above its name. Everyone in the party
-    /// sees it, the mastermind read-only. Rebuilt from IslandVote's state, so it survives map reloads.
+    /// The party's island vote on the campaign map: a header with every voter's Steam picture (dimmed until they vote)
+    /// and Next Turn, and each voted island's voters above its name. The mastermind sees it read-only. Rebuilt from
+    /// IslandVote's state, so it survives map reloads.
     /// </summary>
     internal class VotePanel : MonoBehaviour
     {
+        // A touch more see-through than GameStyle's panels.
         private static readonly Color PanelColor = new Color(0.76f, 0.72f, 0.66f, 0.95f);
-        private static readonly Color ButtonColor = new Color(0.98f, 0.92f, 0.85f, 1f);
-        private static readonly Color DarkText = new Color(0.2f, 0.17f, 0.15f, 1f);
         private const float AvatarSize = 40f, MarkerAvatarSize = 34f;
 
         private sealed class Marker
@@ -33,8 +30,6 @@ namespace BadNorthMP.UI
             public LevelNodeUIProxy proxy;
         }
 
-        private Font font;
-        private Sprite buttonSprite, panelSprite;
         private GameObject canvasObject;
         private RectTransform canvasRect;
         private Text headerText, launchText;
@@ -165,46 +160,23 @@ namespace BadNorthMP.UI
 
         private void Build()
         {
-            FindGameStyle();
-            canvasObject = new GameObject("BNMP Vote Canvas");
-            DontDestroyOnLoad(canvasObject);
-            var canvas = canvasObject.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 450;
-            var scaler = canvasObject.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920f, 1080f);
-            scaler.matchWidthOrHeight = 1f;
-            canvasObject.AddComponent<GraphicRaycaster>();
+            canvasObject = GameStyle.Canvas("BNMP Vote Canvas", 450);
             canvasRect = (RectTransform)canvasObject.transform;
 
-            var panel = new GameObject("Header", typeof(RectTransform));
-            panel.transform.SetParent(canvasObject.transform, false);
-            var rect = (RectTransform)panel.transform;
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 1f);
-            rect.anchoredPosition = new Vector2(0f, -14f);
-            var background = panel.AddComponent<Image>();
-            background.sprite = panelSprite;
-            background.type = panelSprite ? Image.Type.Sliced : Image.Type.Simple;
-            background.color = PanelColor;
-            var layout = panel.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(18, 18, 10, 12);
-            layout.spacing = 6f;
-            layout.childAlignment = TextAnchor.UpperCenter;
-            layout.childControlHeight = layout.childControlWidth = true;
-            layout.childForceExpandHeight = layout.childForceExpandWidth = false;
-            var fitter = panel.AddComponent<ContentSizeFitter>();
-            fitter.verticalFit = fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            RectTransform panel = GameStyle.Panel(canvasObject.transform, new RectOffset(18, 18, 10, 12), 6f);
+            panel.anchorMin = panel.anchorMax = panel.pivot = new Vector2(0.5f, 1f);
+            panel.anchoredPosition = new Vector2(0f, -14f);
+            panel.GetComponent<Image>().color = PanelColor;
 
-            headerText = Label(panel.transform, "", 24);
-            votersRow = Row(panel.transform, AvatarSize);
-            var nextRow = Row(panel.transform, 44f);
-            nextTurnButton = Button(nextRow, "Vote: Next Turn", () => IslandVote.Cast(IslandVote.NextTurn));
-            nextTurnVoters = Row(nextRow, MarkerAvatarSize);
-            cancelButton = Button(nextRow, "Cancel my vote", () => IslandVote.Cast(IslandVote.None));
+            headerText = GameStyle.Label(panel, "", 24);
+            votersRow = GameStyle.Row(panel, AvatarSize, 6f);
+            Transform nextRow = GameStyle.Row(panel, 44f, 6f);
+            nextTurnButton = GameStyle.Button(nextRow, "Vote: Next Turn", () => IslandVote.Cast(IslandVote.NextTurn), 230f);
+            nextTurnVoters = GameStyle.Row(nextRow, MarkerAvatarSize, 6f);
+            cancelButton = GameStyle.Button(nextRow, "Cancel my vote", () => IslandVote.Cast(IslandVote.None), 230f);
             cancelButton.gameObject.SetActive(false);
 
-            launchText = NativeWidgets.Text(canvasObject.transform, font, "", 48);
+            launchText = NativeWidgets.Text(canvasObject.transform, GameStyle.Font, "", 48);
             var launchRect = launchText.rectTransform;
             launchRect.anchorMin = launchRect.anchorMax = new Vector2(0.5f, 0.5f);
             launchRect.anchoredPosition = new Vector2(0f, 160f);
@@ -221,8 +193,8 @@ namespace BadNorthMP.UI
             rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 0f);
             var background = go.AddComponent<Image>();
-            background.sprite = panelSprite;
-            background.type = panelSprite ? Image.Type.Sliced : Image.Type.Simple;
+            background.sprite = GameStyle.PanelSprite;
+            background.type = GameStyle.PanelSprite ? Image.Type.Sliced : Image.Type.Simple;
             background.color = PanelColor;
             background.raycastTarget = false;
             var layout = go.AddComponent<HorizontalLayoutGroup>();
@@ -252,7 +224,7 @@ namespace BadNorthMP.UI
             if (sprite) return;
             // Until Steam sends the picture: the player's initial.
             string name = SteamSession.NameOf(new CSteamID(player));
-            Text initial = Label(go.transform, name.Length > 0 ? name.Substring(0, 1).ToUpperInvariant() : "?", (int)(size * 0.55f));
+            Text initial = GameStyle.Label(go.transform, name.Length > 0 ? name.Substring(0, 1).ToUpperInvariant() : "?", (int)(size * 0.55f));
             Destroy(initial.GetComponent<LayoutElement>());
             var rect = initial.rectTransform;
             rect.anchorMin = Vector2.zero; rect.anchorMax = Vector2.one; rect.offsetMin = rect.offsetMax = Vector2.zero;
@@ -261,79 +233,6 @@ namespace BadNorthMP.UI
         private static void Clear(Transform parent)
         {
             for (int i = parent.childCount - 1; i >= 0; i--) Destroy(parent.GetChild(i).gameObject);
-        }
-
-        private Transform Row(Transform parent, float height)
-        {
-            var go = new GameObject("Row", typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            var layout = go.AddComponent<HorizontalLayoutGroup>();
-            layout.spacing = 6f;
-            layout.childAlignment = TextAnchor.MiddleCenter;
-            layout.childControlHeight = layout.childControlWidth = true;
-            layout.childForceExpandHeight = layout.childForceExpandWidth = false;
-            go.AddComponent<LayoutElement>().minHeight = height;
-            return go.transform;
-        }
-
-        private Text Label(Transform parent, string text, int size)
-        {
-            var go = new GameObject("Label", typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            var label = go.AddComponent<Text>();
-            label.font = font;
-            label.fontSize = size;
-            label.color = DarkText;
-            label.alignment = TextAnchor.MiddleCenter;
-            label.raycastTarget = false;
-            label.horizontalOverflow = HorizontalWrapMode.Overflow;
-            label.text = text;
-            go.AddComponent<LayoutElement>();
-            return label;
-        }
-
-        private Button Button(Transform parent, string text, Action onClick)
-        {
-            var go = new GameObject("Button", typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            var image = go.AddComponent<Image>();
-            image.sprite = buttonSprite;
-            image.type = buttonSprite ? Image.Type.Sliced : Image.Type.Simple;
-            image.color = ButtonColor;
-            var button = go.AddComponent<Button>();
-            button.targetGraphic = image;
-            button.onClick.AddListener(() => onClick());
-            var element = go.AddComponent<LayoutElement>();
-            element.preferredWidth = 230f; element.preferredHeight = 42f;
-            Text label = Label(go.transform, text, 22);
-            Destroy(label.GetComponent<LayoutElement>());
-            var rect = label.rectTransform;
-            rect.anchorMin = Vector2.zero; rect.anchorMax = Vector2.one; rect.offsetMin = rect.offsetMax = Vector2.zero;
-            return button;
-        }
-
-        private void FindGameStyle()
-        {
-            font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            foreach (ModalOverlay popup in Resources.FindObjectsOfTypeAll<ModalOverlay>())
-            {
-                foreach (Image image in popup.GetComponentsInChildren<Image>(true))
-                {
-                    var rect = image.rectTransform;
-                    if (image.sprite && image.type == Image.Type.Sliced && image.sprite.border.sqrMagnitude > 0f && rect.rect.width > 200f && rect.rect.height > 100f)
-                    { panelSprite = image.sprite; break; }
-                }
-                if (panelSprite) break;
-            }
-            foreach (MainMenu menu in Resources.FindObjectsOfTypeAll<MainMenu>())
-            {
-                var prefab = Traverse.Create(menu).Field<ButtonWidget>("textButtonPrefab").Value;
-                if (!prefab) continue;
-                if (prefab.label && prefab.label.font) font = prefab.label.font;
-                foreach (Image image in prefab.GetComponentsInChildren<Image>(true))
-                    if (image.sprite) { buttonSprite = image.sprite; break; }
-                break;
-            }
         }
     }
 }

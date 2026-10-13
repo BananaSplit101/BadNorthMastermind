@@ -10,12 +10,9 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// The ping wheel: hold the middle mouse button on the island, point at what you mean (Attack, Move here, Fall back,
-    /// Hold) and let go; a quick click is a plain "Look here", and letting go in the middle sends nothing. Pings
-    /// (Net.Pings) stand on the island where they were made: a short column of light in that player's main commander's
-    /// colour, with who made it and what it means above. The island hides them like anything else on it (label too);
-    /// one off screen waits at the screen's edge. While pings are on, the middle button no longer turns the camera
-    /// (MiddleMouseForPingsPatch).
+    /// The ping wheel: hold the middle mouse button on the island, point at a choice and let go; a quick click is a
+    /// plain "Look here", letting go in the middle sends nothing. Each ping (Net.Pings) stands on the island as a column
+    /// of light in its player's colour, labelled; the island hides it, and one off screen waits at the screen's edge.
     /// </summary>
     internal class PingWheel : MonoBehaviour
     {
@@ -28,7 +25,6 @@ namespace BadNorthMP.UI
         {
             public RectTransform rect;
             public Image back;
-            public Text label;
         }
 
         private sealed class Marker
@@ -94,13 +90,10 @@ namespace BadNorthMP.UI
 
         private static int groundMask;
 
-        /// <summary>The island's ground and buildings: the layers the game picks tiles on.</summary>
+        /// <summary>The island's ground and buildings: the layers the game picks tiles on (other colliders are invisible and left pings floating).</summary>
         private static int GroundMask => groundMask != 0 ? groundMask : (groundMask = LayerMask.GetMask("Voxels", "Modules"));
 
-        /// <summary>
-        /// The spot under the mouse: the island itself (its ground and buildings, the layers the game picks tiles on;
-        /// other colliders are invisible and left pings floating), or else the sea.
-        /// </summary>
+        /// <summary>The spot under the mouse: the island itself, or else the sea.</summary>
         private static bool Aim(Vector2 screen, out Vector3 world)
         {
             world = Vector3.zero;
@@ -146,7 +139,6 @@ namespace BadNorthMP.UI
                 }
             }
 
-            // One marker per ping: new ones get theirs, faded ones go.
             for (int i = markers.Count - 1; i >= 0; i--)
                 if (!Pings.Active.Contains(markers[i].ping)) { Remove(markers[i]); markers.RemoveAt(i); }
             foreach (Pings.Ping ping in Pings.Active)
@@ -260,10 +252,10 @@ namespace BadNorthMP.UI
             for (int i = 0; i < Choices.Length; i++)
             {
                 float angle = i * 2f * Mathf.PI / Choices.Length;
-                RectTransform chip = ChipNode(wheel, Pings.Label(Choices[i]), Color.white, 20, out Image back, out Text label, out Image dot);
+                RectTransform chip = ChipNode(wheel, Pings.Label(Choices[i]), 20, out Image back, out _, out Image dot);
                 dot.gameObject.SetActive(false); // the words say it; colour is for who
                 chip.anchoredPosition = new Vector2(Mathf.Sin(angle), Mathf.Cos(angle)) * Radius;
-                choices.Add(new Choice { rect = chip, back = back, label = label });
+                choices.Add(new Choice { rect = chip, back = back });
             }
             wheel.SetAsLastSibling();
             foreach (Graphic graphic in canvasObject.GetComponentsInChildren<Graphic>(true)) graphic.raycastTarget = false;
@@ -272,7 +264,7 @@ namespace BadNorthMP.UI
         private Marker NewMarker(Pings.Ping ping)
         {
             var marker = new Marker { ping = ping };
-            marker.chip = ChipNode(rootRect, "", Color.white, 18, out marker.chipBack, out marker.label, out marker.dot);
+            marker.chip = ChipNode(rootRect, "", 18, out marker.chipBack, out marker.label, out marker.dot);
             marker.chip.pivot = new Vector2(0.5f, 0f);
             marker.group = marker.chip.gameObject.AddComponent<CanvasGroup>();
             marker.group.blocksRaycasts = marker.group.interactable = false;
@@ -319,8 +311,8 @@ namespace BadNorthMP.UI
             return rect;
         }
 
-        /// <summary>A parchment label with a coloured dot, sized to its text, centred on its position.</summary>
-        private static RectTransform ChipNode(Transform parent, string text, Color colour, int size, out Image back, out Text label, out Image dot)
+        /// <summary>A parchment label with a white dot (tinted where used), sized to its text, centred on its position.</summary>
+        private static RectTransform ChipNode(Transform parent, string text, int size, out Image back, out Text label, out Image dot)
         {
             RectTransform chip = GameStyle.Panel(parent, new RectOffset(10, 12, 4, 5), 0f);
             chip.anchorMin = chip.anchorMax = chip.pivot = new Vector2(0.5f, 0.5f);
@@ -330,7 +322,6 @@ namespace BadNorthMP.UI
             dot = new GameObject("Dot", typeof(RectTransform)).AddComponent<Image>();
             dot.transform.SetParent(row, false);
             dot.sprite = Shapes.Disc;
-            dot.color = colour;
             var element = dot.gameObject.AddComponent<LayoutElement>();
             element.preferredWidth = element.preferredHeight = size * 0.6f;
             label = GameStyle.Label(row, text, size);

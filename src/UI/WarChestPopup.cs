@@ -12,12 +12,8 @@ using Voxels.TowerDefense.UI;
 namespace BadNorthMP.UI
 {
     /// <summary>
-    /// The mastermind's war chest over a darkened screen: a round button for every Viking type along the top (types
-    /// not seen in this campaign yet are greyed out under a lock), and for the picked type its three upgrades (level
-    /// pips, bonus, price) beside recruiting a commander of that type (each one owned makes the next dearer). Below:
-    /// the commanders as small buttons (an hourglass on those resting, a skull on those that fell on this island);
-    /// click one to sell it back. Then the leader's latest reply, Give up (in a fight), Sell and Close. Built from the game's round buttons, coin and text. Opened from the
-    /// battle screen's coin, the map's coin or the map's Upgrades button.
+    /// The mastermind's war chest over a darkened screen: per Viking type its upgrades and a commander to recruit, the
+    /// commander roster (pick one to sell it), Give up and Close. Opened from either coin or the map's Upgrades button.
     /// </summary>
     internal static class WarChestPopup
     {
@@ -215,8 +211,8 @@ namespace BadNorthMP.UI
             button.input.Paint();
         }
 
-        /// <summary>A loaded reference with an icon for a Viking type (searched at most every two seconds).</summary>
-        private static VikingReference Reference(int type)
+        /// <summary>A loaded reference with an icon for a Viking type (commanders can be any unlocked type).</summary>
+        internal static VikingReference Reference(int type)
         {
             if (references.TryGetValue(type, out VikingReference found) && found) return found;
             if (Time.unscaledTime < nextReferenceSearch) return null;
@@ -311,8 +307,7 @@ namespace BadNorthMP.UI
             panel.AddComponent<Image>().color = Color.clear; // clicks between the widgets stay on the panel
 
             // Top: the title and the war chest's gold.
-            Text title = Label(panel, "War chest", 46, new Vector2(0f, 360f));
-            title.alignment = TextAnchor.MiddleCenter;
+            Label(panel, "War chest", 46, new Vector2(0f, 360f));
             GameObject chest = Node(panel.transform, "Gold");
             Place(chest, new Vector2(500f, 360f), new Vector2(220f, 50f));
             var chestRow = chest.AddComponent<HorizontalLayoutGroup>();
@@ -386,7 +381,7 @@ namespace BadNorthMP.UI
             recruitCount = Label(panel, "", 20, new Vector2(400f, -165f));
             recruitCount.color = Muted;
 
-            // Bottom: the commanders, the leader's latest reply, then Give up and Close.
+            // Bottom: the commanders, the leader's latest reply, then Give up, Sell and Close.
             GameObject roster = Node(panel.transform, "Commanders");
             Place(roster, new Vector2(0f, -294f), new Vector2(1180f, 64f));
             var rosterRow = roster.AddComponent<HorizontalLayoutGroup>();
@@ -474,7 +469,7 @@ namespace BadNorthMP.UI
             rect.sizeDelta = size;
         }
 
-        private static Font GameFont()
+        internal static Font GameFont()
         {
             foreach (MainMenu menu in Resources.FindObjectsOfTypeAll<MainMenu>())
             {

@@ -6,14 +6,12 @@ using Voxels.TowerDefense.SpriteMagic;
 
 namespace BadNorthMP.UI
 {
-    // The mastermind commands Vikings with the game's own commanding look, the way GMW's Viking Invasion does for its
-    // Viking ships: the tile grid an English squad gets, the game's path line to where a squad was sent, and the glow
-    // and tint a squad gets under the mouse and while picked. Only the mastermind's screen turns any of it on.
+    // The game's own commanding look for English squads (tile grid, path line, hover glow and picked tint), lent to the
+    // mastermind's commanders as GMW's Viking Invasion does. Only MastermindPanel turns any of it on.
 
     /// <summary>
-    /// The game's own tile grid (NavigatorNavSpotPool: the tile outlines that show while an English squad is selected,
-    /// with the tile under the mouse lit), lent to the mastermind: every tile while commanders take orders, only the
-    /// shore tiles ships can land on while a landing is planned.
+    /// The tile grid an English squad gets (NavigatorNavSpotPool), lent to the mastermind: every tile while commanders
+    /// take orders, only the ship-ready shore while a landing is planned.
     /// </summary>
     internal static class IslandGrid
     {
@@ -115,16 +113,16 @@ namespace BadNorthMP.UI
     }
 
     /// <summary>
-    /// The game's own path line and target marker (copies of an EnglishPatherVisualizer's), for a commander sent to a
-    /// tile: laid along the tile's own paths from where its (mirrored) Vikings were, shortening as they close in; bright
-    /// while the commander is picked, an outline while another one is, gone once they're there and nobody is picked.
-    /// The tile itself tints in the commander's colour, like a defender squad's target.
+    /// The game's path line and target marker (copies of an EnglishPatherVisualizer's) to a commander's tile, shortening
+    /// as its Vikings close in; the tile tints in the commander's colour, like a defender squad's target.
     /// </summary>
     internal sealed class CommanderPath : NavSpot.IHighlight
     {
         private const int Nodes = 256;
         private const float Step = 0.2f;
         private static readonly Vector3 Lift = new Vector3(0f, 0.05f, 0f);
+        // Each dot's quad, as EnglishPatherVisualizer lays them.
+        private static readonly Vector2[] Corners = { new Vector2(-1f, 0f), new Vector2(0f, -1f), new Vector2(1f, 0f), new Vector2(0f, 1f) };
         private static readonly int ColorId = Shader.PropertyToID("_Color"), FillId = Shader.PropertyToID("_Fill"),
             OutlineId = Shader.PropertyToID("_Outline"), ShadeId = Shader.PropertyToID("_Shade"),
             NavDistId = Shader.PropertyToID("_NavDist"), RadiusId = Shader.PropertyToID("_Radius");
@@ -167,8 +165,6 @@ namespace BadNorthMP.UI
             made++;
             pathObject.name = "BNMP Commander Path " + made;
             endObject.name = "BNMP Commander Path End " + made;
-            pathObject.transform.SetParent(null, false);
-            endObject.transform.SetParent(null, false);
             pathObject.transform.position = Vector3.zero;
             pathObject.transform.rotation = Quaternion.identity;
             pathObject.transform.localScale = Vector3.one;
@@ -232,8 +228,8 @@ namespace BadNorthMP.UI
         }
 
         /// <summary>
-        /// Each frame: <paramref name="from"/> is where its Vikings are (null if none are left), <paramref name="picked"/>
-        /// whether it's taking orders, <paramref name="anyPicked"/> whether any commander is.
+        /// Each frame: <paramref name="from"/> is where its Vikings are (null if none are left). Bright while it's
+        /// <paramref name="picked"/>, an outline while another one is, gone once they're there and nobody is picked.
         /// </summary>
         public void Update(Island island, Vector3? from, bool picked, bool anyPicked)
         {
@@ -312,10 +308,7 @@ namespace BadNorthMP.UI
                         vertices.Add(dot);
                         distances.Add(new Vector2(dist - carried, 0f));
                     }
-                    corners.Add(new Vector2(-1f, 0f));
-                    corners.Add(new Vector2(0f, -1f));
-                    corners.Add(new Vector2(1f, 0f));
-                    corners.Add(new Vector2(0f, 1f));
+                    corners.AddRange(Corners);
                 }
             }
             for (int i = count; i < Nodes; i++)
@@ -346,10 +339,7 @@ namespace BadNorthMP.UI
                     vertices.Add(Vector3.zero);
                     distances.Add(Vector2.zero);
                 }
-                corners.Add(new Vector2(-1f, 0f));
-                corners.Add(new Vector2(0f, -1f));
-                corners.Add(new Vector2(1f, 0f));
-                corners.Add(new Vector2(0f, 1f));
+                corners.AddRange(Corners);
                 int first = i * 4;
                 triangles.Add(first);
                 triangles.Add(first + 1);
@@ -385,9 +375,8 @@ namespace BadNorthMP.UI
     }
 
     /// <summary>
-    /// The glow the game gives a defender squad under the mouse (_Hover) and its picked tint (_SelectionColor), on a
-    /// commander's mirrored Vikings, set the way the game's AgentSelected sets them: through each sprite batch, or the
-    /// renderer's own property block.
+    /// A defender squad's hover glow (_Hover) and picked tint (_SelectionColor) on a commander's Vikings, set as the
+    /// game's AgentSelected does: through each sprite batch, or the renderer's own property block.
     /// </summary>
     internal static class CommanderGlow
     {
