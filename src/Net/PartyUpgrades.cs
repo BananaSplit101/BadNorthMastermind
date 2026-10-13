@@ -4,21 +4,15 @@ using BadNorthMP.Spectator;
 using BadNorthMP.UI;
 using HarmonyLib;
 using Steamworks;
-using UnityEngine;
 using Voxels.TowerDefense;
-using Voxels.TowerDefense.ProfileInternals;
-using Voxels.TowerDefense.UI;
 using Voxels.TowerDefense.UI.UpgradeScreen;
 
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Campaign-map upgrades in a party. Every player (the leader included) upgrades and equips only their own
-    /// commanders, from the shared coin bank and inventory, in the native upgrade menu.
-    ///
-    /// The leader applies everything to the real save: other defenders' purchases run natively on their own copy
-    /// for instant feedback and are sent to the leader, who checks and applies them. Every applied purchase is
-    /// broadcast, so all players' maps and menus update in place rather than reloading the whole campaign.
+    /// Campaign-map upgrades in a party: each player upgrades only their own commanders, from the shared coin bank and
+    /// inventory. Other defenders' purchases run natively on their copy for instant feedback and are sent to the leader,
+    /// who checks and applies them, then broadcasts each so everyone updates in place without a campaign reload.
     /// </summary>
     internal static class PartyUpgrades
     {
@@ -132,15 +126,6 @@ namespace BadNorthMP.Net
 
         // ---- Leader ---------------------------------------------------------------------------------
 
-        private static bool OnMap()
-        {
-            var manager = Singleton<CampaignManager>.instance;
-            var stack = Singleton<Voxels.TowerDefense.Stack>.instance;
-            return manager && manager.campaign && Profile.campaign != null && !SpectatorSession.Active &&
-                stack && stack.stateCampaign.gameObject.activeInHierarchy && !stack.stateLoading.gameObject.activeInHierarchy &&
-                !GameAccess.CurrentIsland;
-        }
-
         private static void Receive(CSteamID sender, System.IO.BinaryReader r)
         {
             var session = SteamSession.Instance;
@@ -153,7 +138,7 @@ namespace BadNorthMP.Net
             HeroUpgradeDefinition def = name.Length <= 200 ? ResourceList<HeroUpgradeDefinition>.Get(name) : null;
             if (!PartyFlow.Deployed || token != PartyFlow.State.token || Profile.campaign == null || seed != Profile.campaign.seed)
                 message = "That upgrade was for a different campaign.";
-            else if (!OnMap())
+            else if (!IslandVote.LeaderOnMap())
                 message = "Upgrades wait until the leader is back on the map.";
             else if (heroIndex < 0 || heroIndex >= Profile.campaign.heroes.Count || !PartyFlow.State.Owns(sender.m_SteamID, heroIndex))
                 message = "Only a commander's owner can upgrade or equip them.";

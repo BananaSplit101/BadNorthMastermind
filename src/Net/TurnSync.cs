@@ -8,11 +8,9 @@ using Voxels.TowerDefense.UI;
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// Next Turn without everyone reloading the map. The leader plays the party's Next Turn on its map and sends the
-    /// one thing nobody can predict (the new time of day, a random roll); every other player plays the same turn on
-    /// their own copy of the map, animation and all. The leader's save after the turn then only refreshes the copy
-    /// kept for players who join later. A player whose map can't play the turn (still loading, on another turn) asks
-    /// for the whole campaign instead, a moment later, once the leader has saved the turn.
+    /// Next Turn without everyone reloading the map: the leader sends the one random roll (the new time of day) and
+    /// every player plays the same turn on their own map. A map that can't (still loading, on another turn) asks for
+    /// the whole campaign once the leader has saved the turn.
     /// </summary>
     internal static class TurnSync
     {
@@ -91,7 +89,7 @@ namespace BadNorthMP.Net
             if (requestAt < 0f || Time.unscaledTime < requestAt) return;
             requestAt = -1f;
             if (!Session || !Session.InLobby || Roles.IsDefender || Roles.DefenderId == CSteamID.Nil) return;
-            Session.Send(Roles.DefenderId, Packet.Build(MsgType.CampaignRequest, w => { }));
+            Session.Send(Roles.DefenderId, Packet.Build(MsgType.CampaignRequest));
         }
     }
 }

@@ -13,18 +13,15 @@ using Stack = Voxels.TowerDefense.Stack;
 namespace BadNorthMP.Net
 {
     /// <summary>
-    /// The party votes on where to go next: an island, or Next Turn. Every connected defender (the leader too)
-    /// has one vote; the mastermind doesn't vote, and anyone can take theirs back. The leader counts the votes. When
-    /// everyone has voted, or Countdown seconds after the first vote, a short "Launching game" countdown starts;
-    /// then the option with the most votes wins (ties at random) and the leader carries it out through the native
-    /// map. Taking a vote back during that countdown stops it and gives everyone a fresh Countdown. Nobody votes
-    /// while someone is still loading the campaign map (LoadGate); a running countdown stops until they have.
+    /// The defenders vote on an island or Next Turn, and the leader counts. Once everyone has voted, or Countdown
+    /// seconds after the first vote, a LaunchCountdown runs and then the most votes win (ties at random). Taking a
+    /// vote back stops the launch and gives a fresh Countdown. No voting while someone is still loading the map (LoadGate).
     /// </summary>
     internal static class IslandVote
     {
         public const int NextTurn = -2, None = -1;
-        public const float Countdown = 20f;
-        public const float LaunchCountdown = 5f;
+        public const float Countdown = 20f; // seconds
+        public const float LaunchCountdown = 5f; // seconds
 
         // The latest vote state (the leader's own, or as received from the leader).
         public static readonly Dictionary<ulong, int> Votes = new Dictionary<ulong, int>();
@@ -70,7 +67,7 @@ namespace BadNorthMP.Net
             });
         }
 
-        /// <summary>Whether this player can vote (a defender in a deployed party, on the campaign map).</summary>
+        /// <summary>This player is a seated defender in a deployed party.</summary>
         public static bool CanVote => PartyFlow.Deployed && !Roles.IsMastermind && PartyFlow.Mine != null;
 
         /// <summary>Seconds until the vote is decided, or -1 when no countdown is running.</summary>
@@ -86,9 +83,8 @@ namespace BadNorthMP.Net
         {
             var result = new List<ulong>();
             if (!PartyFlow.Deployed) return result;
-            var members = Session.Members();
             foreach (var seat in PartyFlow.State.seats)
-                if (members.Contains(new CSteamID(seat.player)) && Updater.IsCompatible(new CSteamID(seat.player))) result.Add(seat.player);
+                if (PartyFlow.IsMember(seat.player)) result.Add(seat.player);
             return result;
         }
 
@@ -208,7 +204,6 @@ namespace BadNorthMP.Net
                 if (Roles.IsDefender && (Votes.Count > 0 || deadline >= 0f)) Clear();
                 return;
             }
-            // Players who joined after the draft get a seat while the leader is on the map, to fight from the next island.
             if (LeaderOnMap()) PartyFlow.SeatLateJoiners();
             // Drop votes from players who left, and (while the map is up) votes the map no longer allows.
             List<ulong> voters = Voters();

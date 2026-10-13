@@ -16,8 +16,9 @@ namespace BadNorthMP.Net
 {
     internal static class PartyFlow
     {
+        private const string IdleStatus = "The mastermind starts the campaign, then defenders choose their squads.";
         public static PartyRoster State = new PartyRoster();
-        public static string Status = "The mastermind starts the campaign, then defenders choose their squads.";
+        public static string Status = IdleStatus;
         public static int Difficulty = 2, SaveChoice = -1;
         public static readonly bool[] Saved = new bool[5];
         public static readonly bool[] Occupied = new bool[5];
@@ -70,9 +71,8 @@ namespace BadNorthMP.Net
         private static ulong Owner(EnglishSquad squad)
         {
             if (!squad || Profile.campaign == null) return 0;
-            int hero = Profile.campaign.heroes.IndexOf(squad.hero);
-            foreach (var seat in State.seats) if (State.Owns(seat.player, hero)) return seat.player;
-            return 0;
+            var seat = State.OwnerOf(Profile.campaign.heroes.IndexOf(squad.hero));
+            return seat != null ? seat.player : 0;
         }
 
         public static void Init()
@@ -153,8 +153,8 @@ namespace BadNorthMP.Net
                 bool transition = State.phase != 3;
                 var before = State;
                 State = state; Status = "Choose your squad below. Only its owner can issue orders.";
-                if (!transition) AnnounceNewSeats(before, state);
                 if (transition) MultiplayerScreen.CloseForBattle();
+                else AnnounceNewSeats(before, state);
                 if (Session.IsHost) Broadcast();
             });
             Router.On(MsgType.PartyFailure, (sender, r) =>
@@ -264,11 +264,8 @@ namespace BadNorthMP.Net
             RecoverFromSilence();
         }
 
-        /// <summary>
-        /// Guests: the host repeats the party state every 2 seconds while choosing and loading. Hearing nothing for
-        /// 8 seconds means our session with the host broke (it happens after a restart to update): drop it, which
-        /// makes Steam negotiate a new one, and ask for the state again.
-        /// </summary>
+        // Guests: the host repeats the party state every 2 s while choosing and loading, so 8 s of silence means our
+        // session with the host broke (it happens after a restart to update). Dropping it makes Steam negotiate a new one.
         private static void RecoverFromSilence()
         {
             if (Session.IsHost || !Active || (State.phase != 1 && State.phase != 2) || lastStateAt <= 0f) return;
@@ -277,7 +274,7 @@ namespace BadNorthMP.Net
             nextRecover = Time.unscaledTime + 8f;
             ModLog.Problem("party_silent", $"No party updates from the host for {silent:0} s; reconnecting");
             Session.ResetConnection(Session.Owner);
-            Session.Send(Session.Owner, Packet.Build(MsgType.PartyStateRequest, w => { }));
+            Session.Send(Session.Owner, Packet.Build(MsgType.PartyStateRequest));
         }
         private static void Reset()
         {
@@ -288,7 +285,7 @@ namespace BadNorthMP.Net
             Array.Clear(Saved, 0, Saved.Length);
             Array.Clear(Occupied, 0, Occupied.Length); Array.Clear(SaveDetails, 0, SaveDetails.Length);
             CatalogReady = false; NewSaveSlot = -1;
-            Status = "The mastermind starts the campaign, then defenders choose their squads.";
+            Status = IdleStatus;
         }
         private static void RefreshContext()
         {
@@ -332,31 +329,29 @@ namespace BadNorthMP.Net
                 var load = MultiplayerCampaigns.LoadHeaders();
                 while (true)
                 {
-                    bool more = false; Exception failure = null;
-                    try { more = load.MoveNext(); } catch (Exception e) { failure = e; }
-                    if (failure != null) { ModLog.Warn("Party save catalogue failed: " + failure); yield break; }
+                    bool more;
+                    try { more = load.MoveNext(); }
+                    catch (Exception e) { ModLog.Warn("Party save catalogue failed: " + e); yield break; }
                     if (!more) break;
                     yield return load.Current;
                 }
                 if (!Roles.IsDefender || Profile.userSave == null) yield break;
-                Exception sendFailure = null;
                 try
                 {
-                Session.Send(Session.Owner, Packet.Build(MsgType.PartyCatalog, w =>
-            {
-                foreach (var meta in MultiplayerCampaigns.Saves) w.Write(meta != null && !meta.gameOver);
-                foreach (var meta in MultiplayerCampaigns.Saves)
-                {
-                    w.Write(meta != null);
-                    w.Write(meta == null ? "" : $"{meta.prefs.difficulty}{(meta.prefs.allowReplays ? "" : ", no restarts")}    {Mathf.RoundToInt(meta.campaignFraction * 100f)}% complete\nPlaytime {meta.playTime / 3600}:{meta.playTime / 60 % 60:00}    Saved {meta.savedTime:d MMM HH:mm}" +
-                        (meta.gameOver ? "    Campaign ended" : ""));
-                }
-                PartyRoster.WriteNames(w, PartyLoadout.Catalog(true)); PartyRoster.WriteNames(w, PartyLoadout.Catalog(false));
-            }));
+                    Session.Send(Session.Owner, Packet.Build(MsgType.PartyCatalog, w =>
+                    {
+                        foreach (var meta in MultiplayerCampaigns.Saves) w.Write(meta != null && !meta.gameOver);
+                        foreach (var meta in MultiplayerCampaigns.Saves)
+                        {
+                            w.Write(meta != null);
+                            w.Write(meta == null ? "" : $"{meta.prefs.difficulty}{(meta.prefs.allowReplays ? "" : ", no restarts")}    {Mathf.RoundToInt(meta.campaignFraction * 100f)}% complete\nPlaytime {meta.playTime / 3600}:{meta.playTime / 60 % 60:00}    Saved {meta.savedTime:d MMM HH:mm}" +
+                                (meta.gameOver ? "    Campaign ended" : ""));
+                        }
+                        PartyRoster.WriteNames(w, PartyLoadout.Catalog(true)); PartyRoster.WriteNames(w, PartyLoadout.Catalog(false));
+                    }));
                     catalogSent = true;
                 }
-                catch (Exception e) { sendFailure = e; }
-                if (sendFailure != null) ModLog.Warn("Party save catalogue failed: " + sendFailure);
+                catch (Exception e) { ModLog.Warn("Party save catalogue failed: " + e); }
             }
             finally { headersLoading = false; }
         }
@@ -383,10 +378,7 @@ namespace BadNorthMP.Net
 
         private static float nextSeatCheck;
 
-        /// <summary>
-        /// Leader, on the campaign map: lobby members without a seat (they joined after the draft, on this version)
-        /// take one, so they fight from the next island. PartyRoster.SeatLateJoiner decides whose commander they get.
-        /// </summary>
+        /// <summary>Leader, on the campaign map: seat lobby members who joined after the draft, to fight from the next island.</summary>
         public static void SeatLateJoiners()
         {
             if (!Roles.IsDefender || !Deployed || Profile.campaign == null || Time.unscaledTime < nextSeatCheck) return;
@@ -407,7 +399,7 @@ namespace BadNorthMP.Net
             PublishOwnership();
         }
 
-        /// <summary>Everyone: say who joined the defenders mid-campaign (seats the leader added), and whose commander they got.</summary>
+        /// <summary>Everyone: announce seats the leader added mid-campaign, and whose commander they got.</summary>
         private static void AnnounceNewSeats(PartyRoster before, PartyRoster after)
         {
             foreach (var seat in after.seats)
@@ -460,20 +452,19 @@ namespace BadNorthMP.Net
             hero.monoHero = HeroGeneratorUI.instance.GetStartingMonoHero();
             try
             {
-            PartyLoadout.IsolatePortraitAtlas(hero.monoHero);
-            int seed = unchecked(State.seed + id * 43271 + choice * 7919);
-            HeroGeneratorUI.instance.RandomizeStartingHero(hero, hero.upgrades, false, ref seed, 1,
-                HeroGeneratorUI.ChangeFlags.All, new List<HeroDefinition>());
-            int total = State.seats.Count == 1 ? 2 : State.seats.Count;
-            hero.hue = ((State.seed % 1000) / 1000f + id / (float)total) % 1f;
-            hero.color = HeroGeneratorUI.instance.gradient.Evaluate(hero.hue);
-            // Seeded too, like the game's own randomising above: every player's game draws the same face for a pick,
-            // whatever random numbers it drew before.
-            UnityEngine.Random.State before = UnityEngine.Random.state;
-            UnityEngine.Random.InitState(unchecked(id + State.seed));
-            try { hero.monoHero.Setup(hero, hero.upgrades, HeroGeneratorUI.instance.swapSource, unchecked(id + State.seed), crop: false); }
-            finally { UnityEngine.Random.state = before; }
-            return hero;
+                PartyLoadout.IsolatePortraitAtlas(hero.monoHero);
+                int seed = unchecked(State.seed + id * 43271 + choice * 7919);
+                HeroGeneratorUI.instance.RandomizeStartingHero(hero, hero.upgrades, false, ref seed, 1,
+                    HeroGeneratorUI.ChangeFlags.All, new List<HeroDefinition>());
+                int total = State.seats.Count == 1 ? 2 : State.seats.Count;
+                hero.hue = ((State.seed % 1000) / 1000f + id / (float)total) % 1f;
+                hero.color = HeroGeneratorUI.instance.gradient.Evaluate(hero.hue);
+                // Seeded too, so every player's game draws the same face for a pick whatever random numbers it drew before.
+                UnityEngine.Random.State before = UnityEngine.Random.state;
+                UnityEngine.Random.InitState(unchecked(id + State.seed));
+                try { hero.monoHero.Setup(hero, hero.upgrades, HeroGeneratorUI.instance.swapSource, unchecked(id + State.seed), crop: false); }
+                finally { UnityEngine.Random.state = before; }
+                return hero;
             }
             catch
             {
@@ -528,7 +519,7 @@ namespace BadNorthMP.Net
                 w.Write(State.token); w.Write((byte)choices.Length);
                 foreach (int type in choices) w.Write((byte)type);
                 w.Write(ready);
-                PartyRoster.WriteNames(w, Mine.traits); PartyRoster.WriteNames(w, Mine.items);
+                PartyRoster.WriteNames(w, seat.traits); PartyRoster.WriteNames(w, seat.items);
             }));
         }
         private static void Broadcast() => Session.Broadcast(Packet.Build(MsgType.PartyState, w =>
@@ -560,9 +551,9 @@ namespace BadNorthMP.Net
             var load = MultiplayerCampaigns.LoadHeaders();
             while (true)
             {
-                bool more = false; Exception failure = null;
-                try { more = load.MoveNext(); } catch (Exception e) { failure = e; }
-                if (failure != null) { Failed(failure); yield break; }
+                bool more;
+                try { more = load.MoveNext(); }
+                catch (Exception e) { Failed(e); yield break; }
                 if (!more) break;
                 yield return load.Current;
             }
@@ -572,7 +563,7 @@ namespace BadNorthMP.Net
                 if (!Roles.IsDefender || State.phase != 2 || !MembersMatch(State)) throw new IOException("The lobby changed during loading");
                 var campaigns = Singleton<CampaignManager>.instance;
                 if (campaigns && campaigns.campaign) throw new IOException("The campaign leader must return to the main menu before starting another campaign.");
-                if (slot >= MultiplayerCampaigns.FirstSlot && slot < MultiplayerCampaigns.FirstSlot + 5)
+                if (slot >= MultiplayerCampaigns.FirstSlot && slot < MultiplayerCampaigns.FirstSlot + MultiplayerCampaigns.SlotCount)
                 {
                     var meta = MultiplayerCampaigns.Saves[slot - MultiplayerCampaigns.FirstSlot];
                     if (meta == null || meta.gameOver) throw new IOException("That multiplayer save is unavailable");
@@ -722,7 +713,6 @@ namespace BadNorthMP.Net
         internal static bool IsMember(ulong player) =>
             Session.Members().Contains(new CSteamID(player)) && Updater.IsCompatible(new CSteamID(player));
 
-
         /// <summary>The commander waiting to be rescued on this island, or -1.</summary>
         public static int RescueHero(Island island)
         {
@@ -731,10 +721,7 @@ namespace BadNorthMP.Net
             return hero != null && hero.recruitable && Profile.campaign != null ? Profile.campaign.heroes.IndexOf(hero) : -1;
         }
 
-        /// <summary>
-        /// Leader: the island's rescued commander fights with the party, so it needs an owner before it spawns.
-        /// It goes to the next player in turn and stays theirs (including retries) once it joins.
-        /// </summary>
+        /// <summary>Leader: the island's rescued commander needs an owner before it spawns (the next player in turn, kept on retries).</summary>
         public static void AssignRescue(Island island)
         {
             int hero = RescueHero(island);
@@ -748,9 +735,8 @@ namespace BadNorthMP.Net
             GameNotify.Post(text);
         }
         /// <summary>
-        /// Who can fight on an island: each seat's commanders able to this turn (connected players only, the island's
-        /// rescued commander apart), whoever has waited longest since their last deployment first. Also says whose the
-        /// rescue is (-1: no rescue, or its owner isn't here).
+        /// Each connected seat's commanders able to fight this turn, longest-waiting first, the rescue apart; rescueSeat
+        /// is -1 with no rescue or its owner away.
         /// </summary>
         private static List<int>[] Candidates(Island island, out int rescue, out int rescueSeat)
         {
@@ -771,7 +757,7 @@ namespace BadNorthMP.Net
             return candidates;
         }
 
-        /// <summary>Defenders taking part right now: seated, here and on this version (1 outside a party campaign).</summary>
+        /// <summary>Seated defenders here and on this version (1 outside a party campaign).</summary>
         public static int ConnectedDefenders
         {
             get
@@ -783,14 +769,10 @@ namespace BadNorthMP.Net
             }
         }
 
-        /// <summary>How many squads the party may bring to an island (the leader's config; Plugin wires it up).</summary>
+        /// <summary>Squads the party may bring to an island (the leader's config; Plugin wires it up).</summary>
         public static Func<int> MaxDeployed = () => PartyDeployment.DefaultSquads;
 
-        /// <summary>
-        /// Leader: share out an island's squads (PartyDeployment.Shares: at most MaxDeployed, one per player first,
-        /// spare squads rotating, the rescue always going) with everyone on their most rested commanders. DeployFlow
-        /// then lets each player choose which of theirs go.
-        /// </summary>
+        /// <summary>Leader: share out an island's squads on everyone's most rested commanders, for DeployFlow to choose from.</summary>
         public static PartyDeployment PlanDeployment(Island island, int token)
         {
             var candidates = Candidates(island, out int rescue, out int rescueSeat);
@@ -818,10 +800,7 @@ namespace BadNorthMP.Net
             finally { PreparingDeployment = false; }
         }
 
-        /// <summary>
-        /// How long a commander has waited: never deployed ranks highest, then those deployed longest ago.
-        /// CampaignSave.oldDeployOrder lists deployed commanders most recent first.
-        /// </summary>
+        // Never deployed ranks highest, then the longest ago (CampaignSave.oldDeployOrder lists the most recent first).
         private static int WaitRank(int hero)
         {
             var order = Profile.campaign.oldDeployOrder;

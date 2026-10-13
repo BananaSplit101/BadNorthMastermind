@@ -3,7 +3,6 @@ using BadNorthMP.Spectator;
 using BadNorthMP.UI;
 using HarmonyLib;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using Voxels.TowerDefense;
 namespace BadNorthMP.Net
 {
@@ -100,8 +99,7 @@ namespace BadNorthMP.Net
             if (selector && selector.selectedSquad != squad) selector.SelectSquad(squad, false);
         }
 
-        /// <summary>Remote defender: forward a native move order to the leader.</summary>
-        /// <param name="deselect">Like SquadMover.MoveTo, which deselects the squad after ordering it.</param>
+        /// <summary>Remote defender: forward a native move order to the leader (deselect: like SquadMover.MoveTo).</summary>
         public static void Move(EnglishSquad squad, NavSpot target, bool deselect = false)
         {
             if (!squad || !target) return;
@@ -130,13 +128,6 @@ namespace BadNorthMP.Net
         {
             pendingOrders.Enqueue(Time.unscaledTime);
             ModLog.Info("Order sent: " + description);
-        }
-
-        /// <summary>An order for the selected squad.</summary>
-        public static bool Command(int target, bool action)
-        {
-            var selector = Singleton<SquadSelector>.instance;
-            return Command(selector ? selector.selectedSquad : Selected, target, action);
         }
 
         public static bool Command(EnglishSquad squad, int target, bool action)

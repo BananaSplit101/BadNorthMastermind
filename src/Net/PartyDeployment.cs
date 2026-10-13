@@ -15,11 +15,7 @@ namespace BadNorthMP.Net
         public bool Choosing => quota > 0;
     }
 
-    /// <summary>
-    /// Before an island starts: how many squads each player brings and which of their commanders they picked. The
-    /// leader shares out the squads, everyone picks their own commanders and presses Ready, then the leader deploys.
-    /// Game-independent, like PartyRoster.
-    /// </summary>
+    /// <summary>Before an island starts: each player's share of squads and the commanders they picked. Game-independent.</summary>
     internal sealed class PartyDeployment
     {
         /// <summary>Squads per island by default (the game's own loadout allows 4), and the most a leader can set.</summary>
@@ -43,10 +39,9 @@ namespace BadNorthMP.Net
         }
 
         /// <summary>
-        /// Shares out the squads: the island's rescued commander always goes and takes one of the maxSquads; every
-        /// player with a commander who can fight gets one squad first, in seat order (the rescue's owner counts it as
-        /// theirs); spare squads go round the table, starting with a different player each island. candidates[s] are
-        /// seat s's commanders who can fight. With nobody able to fight, nobody goes (the rescue needs company).
+        /// The rescue always goes and takes one of the maxSquads; every player who can fight gets one squad first, in
+        /// seat order (the rescue counts as its owner's); spare squads go round the table from a different player each
+        /// round. With nobody able to fight, nobody goes (the rescue needs company).
         /// </summary>
         public static int[] Shares(IList<List<int>> candidates, int rescueSeat, int round, int maxSquads = DefaultSquads)
         {
@@ -58,7 +53,7 @@ namespace BadNorthMP.Net
             int slots = rescueSeat >= 0 ? maxSquads - 1 : maxSquads, used = 0;
             for (int s = 0; s < count && used < slots; s++)
                 if (s != rescueSeat && candidates[s].Count > 0) { shares[s]++; used++; }
-            int start = count > 0 ? round % count : 0;
+            int start = round % count;
             for (bool added = true; added && used < slots;)
             {
                 added = false;
