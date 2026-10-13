@@ -4,10 +4,9 @@ using BepInEx.Logging;
 namespace BadNorthMP.Telemetry
 {
     /// <summary>
-    /// Every BepInEx log line, ours, other mods' and the game's own (BepInEx passes Unity's on as "Unity Log"), into the
-    /// session's spool. A line repeating over and over is kept a few times and then counted, and a burst of more than a
-    /// few hundred lines a second is cut short, so one runaway error can't fill the spool. Error lines from mods (Unity's
-    /// own errors arrive with their stacks through ErrorReporter) are reported as errors too.
+    /// Every BepInEx log line (the game's own arrive as "Unity Log") into the session's spool, on whatever thread logged
+    /// it. Long runs of one line and bursts of over LinesPerSecond are cut short, so a runaway error can't fill the
+    /// spool. Mods' error lines are reported as errors too (Unity's come with their stacks through ErrorReporter).
     /// </summary>
     internal sealed class LogCapture : ILogListener
     {

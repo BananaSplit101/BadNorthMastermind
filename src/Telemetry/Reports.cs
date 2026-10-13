@@ -15,17 +15,12 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Telemetry
 {
     /// <summary>
-    /// Error reports (PostHog, US cloud): everything that helps fix a bug, sent automatically unless the player turns it
-    /// off (they're told once, the first time they press Play: ReportsNotice).
-    /// - Every log line of the session (ours, other mods', the game's), as PostHog Logs, tagged with this player's role,
-    ///   where they are and the lobby.
-    /// - Every distinct error, as a PostHog error (its stack and the game's state then), once a session each.
-    /// - Events for what happened: the session and its mods and settings, lobbies joined and left, islands, loading
-    ///   waits, a crash found at the next launch.
-    /// - Incidents (Incidents): something going wrong makes everyone in the lobby send their recent log under one code.
-    /// Names, Steam IDs and the Windows user name never leave the computer (Scrub). Everything goes through the
-    /// session's spool first (SpoolFile), so playing offline or crashing loses nothing: what's left is sent at the next
-    /// launch. PostHog's feature flags can switch it all off, turn on more detailed logging, or change the limits.
+    /// Error reports to PostHog (US cloud): the session's log lines (PostHog Logs), each distinct error once a session,
+    /// events for what happened, and lobby-wide incidents (Incidents). Sent unless the player turns them off; they're
+    /// told once first (ReportsUi's notice). Names, Steam IDs and the Windows user name never leave the computer
+    /// (Scrub). Everything goes through the session's spool first (SpoolFile), so playing offline or crashing loses
+    /// nothing: what's left is sent at the next launch. PostHog feature flags can switch it all off, turn on more
+    /// detailed logging or change the limits.
     /// </summary>
     internal class Reports : MonoBehaviour
     {
@@ -55,6 +50,7 @@ namespace BadNorthMP.Telemetry
         private static bool killed, flagsAsked, flushSoon;
         private static int failures;
         private static float nextUpload, lastUpload = -100f;
+        // Per thread: a line logged while recording one isn't recorded (it would recurse).
         [ThreadStatic] private static bool recording;
 
         /// <summary>The project reports go to (a setting can point a test build elsewhere).</summary>
@@ -96,7 +92,7 @@ namespace BadNorthMP.Telemetry
             }
         }
 
-        /// <summary>The session, for its spool header and its logs: versions and the system.</summary>
+        /// <summary>The spool header: versions and the system.</summary>
         private static Dictionary<string, object> Meta() => new Dictionary<string, object>
         {
             ["session_id"] = SessionId,
@@ -125,12 +121,10 @@ namespace BadNorthMP.Telemetry
             StartCoroutine(Uploads());
         }
 
-        /// <summary>The mods installed and the settings, for the session's first event (mod conflicts, odd settings).</summary>
+        /// <summary>The meta plus the mods installed and the settings (mod conflicts, odd settings).</summary>
         private static Dictionary<string, object> SessionDetails()
         {
-            var details = new Dictionary<string, object>();
-            foreach (KeyValuePair<string, object> pair in Meta()) details[pair.Key] = pair.Value;
-            details["session_id"] = SessionId;
+            Dictionary<string, object> details = Meta();
             var plugins = new List<object>();
             try
             {
@@ -154,7 +148,7 @@ namespace BadNorthMP.Telemetry
 
         /// <summary>
         /// Earlier sessions: each one's end is reported once (closed properly, or a crash with its last lines and the
-        /// game's own log from then), an update since the last one too; whatever they didn't get to send goes now.
+        /// game's own log from then), and an update since the last one. What they didn't send goes with the uploads.
         /// </summary>
         private static void LookBack()
         {
@@ -196,15 +190,7 @@ namespace BadNorthMP.Telemetry
                 try
                 {
                     string path = Path.Combine(Application.persistentDataPath, name);
-                    if (!File.Exists(path)) continue;
-                    using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                    {
-                        long from = Math.Max(0, stream.Length - maxBytes);
-                        stream.Position = from;
-                        var data = new byte[stream.Length - from];
-                        int read = stream.Read(data, 0, data.Length);
-                        return Encoding.UTF8.GetString(data, 0, read);
-                    }
+                    if (File.Exists(path)) return SpoolFile.ReadEnd(path, maxBytes, out _);
                 }
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }
@@ -249,7 +235,7 @@ namespace BadNorthMP.Telemetry
             return lines;
         }
 
-        /// <summary>An event (main thread): what happened, with where this player is, sent with the next upload.</summary>
+        /// <summary>An event (main thread), tagged with where this player is, sent with the next upload.</summary>
         public static void Event(string name, Dictionary<string, object> properties = null)
         {
             if (!Collecting) return;
@@ -272,8 +258,8 @@ namespace BadNorthMP.Telemetry
         }
 
         /// <summary>
-        /// Something that shouldn't happen, found by our own checks (ModLog.Problem, main thread): reported, and an
-        /// incident. The same kind again within 30 s is only in the log.
+        /// Something our own checks found wrong (ModLog.Problem, main thread): an event and an incident. The same
+        /// category again within 30 s is only in the log.
         /// </summary>
         public static void Problem(string category, string message)
         {
@@ -502,7 +488,7 @@ namespace BadNorthMP.Telemetry
 
         /// <summary>
         /// The next stretch of a spool, made ready to send on a worker thread: read, every name and ID taken out, and
-        /// written as the two requests (null where it has nothing for one).
+        /// written as the two requests (null where it has nothing for one). The main thread reads them once Ready.
         /// </summary>
         private sealed class Stretch
         {
@@ -589,7 +575,7 @@ namespace BadNorthMP.Telemetry
             private static string Trim(string text) => string.IsNullOrEmpty(text) ? "" : text.Length > 200 ? text.Substring(0, 200) : text;
         }
 
-        /// <summary>The remote switches (PostHog feature flags), once a session: off, more logging, other limits.</summary>
+        /// <summary>The remote switches (PostHog feature flags), once a session.</summary>
         private static IEnumerator Flags()
         {
             using (var request = new UnityWebRequest(Host + "/flags?v=2", "POST"))

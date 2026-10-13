@@ -6,7 +6,6 @@ using UnityEngine;
 using Voxels.TowerDefense;
 using Voxels.TowerDefense.UI.UpgradeScreen;
 using Voxels.TowerDefense.Upgrades;
-using Object = UnityEngine.Object;
 using Random = UnityEngine.Random;
 
 namespace BadNorthMP.Traits
@@ -56,6 +55,9 @@ namespace BadNorthMP.Traits
                 trait.levels[0].prepurchaseDescription = key + "/DESC";
             }
         }
+
+        /// <summary>A defender of a Fearless squad, where battles are simulated.</summary>
+        public static bool FearlessDefender(Agent agent) => TraitRules.Simulates && agent.isEnglish && TraitRules.Has(agent.squad, Fearless);
 
         /// <summary>An infantryman's look and moves become the Viking two-hander's (Fearless): animations, sounds, leap attack.</summary>
         public static void ConvertToDualWielder(Agent agent, bool commander)
@@ -128,7 +130,6 @@ namespace BadNorthMP.Traits
     [HarmonyPatch(typeof(Agent), "FixedUpdateAgent")]
     internal static class VtoAgentUpdatePatch
     {
-        private static readonly float[] GiantHeroScale = { 1.2f, 1.3f, 1.4f, 1.5f }, GiantScale = { 1.15f, 1.22f, 1.29f, 1.35f };
         private static readonly float[] GiantHeroArmor = { 12f, 15f, 18f, 21f }, GiantArmor = { 2f, 2.5f, 3f, 3.5f };
         private static readonly float[] GiantHeroStun = { 0.5f, 0.45f, 0.4f, 0.35f }, GiantStun = { 0.75f, 0.7f, 0.65f, 0.6f };
 
@@ -177,7 +178,7 @@ namespace BadNorthMP.Traits
             int level = Mathf.Clamp(squad.level, 0, 3);
             if (trait == VanillaTraitsOverhaul.Mountain)
             {
-                agent.scale = (commander ? GiantHeroScale : GiantScale)[level];
+                agent.scale = TraitVisuals.GiantSize(commander, level);
                 agent.maxHealth *= 1.5f;
                 agent.health = agent.maxHealth;
                 if (agent.brain is Swordsman) VanillaTraitsOverhaul.ConvertToTank(agent, commander);
@@ -236,8 +237,7 @@ namespace BadNorthMP.Traits
     [HarmonyPatch(typeof(Shield), nameof(Shield.ModifyAttack))]
     internal static class VtoShieldModifyAttackPatch
     {
-        private static bool Prefix(Shield __instance) =>
-            !(TraitRules.Simulates && __instance.agent.isEnglish && TraitRules.Has(__instance.agent.squad, VanillaTraitsOverhaul.Fearless));
+        private static bool Prefix(Shield __instance) => !VanillaTraitsOverhaul.FearlessDefender(__instance.agent);
     }
 
     [HarmonyPatch(typeof(Shield), "ShieldCheck")]
@@ -247,7 +247,7 @@ namespace BadNorthMP.Traits
 
         private static bool Prefix(Shield __instance)
         {
-            if (!TraitRules.Simulates || !__instance.agent.isEnglish || !TraitRules.Has(__instance.agent.squad, VanillaTraitsOverhaul.Fearless)) return true;
+            if (!VanillaTraitsOverhaul.FearlessDefender(__instance.agent)) return true;
             (NoShield?.GetValue(__instance) as AgentState)?.SetActive(true);
             return false;
         }
@@ -256,8 +256,7 @@ namespace BadNorthMP.Traits
     [HarmonyPatch(typeof(Shield), "MaybeParry")]
     internal static class VtoShieldParryPatch
     {
-        private static bool Prefix(Shield __instance) =>
-            !(TraitRules.Simulates && __instance.agent.isEnglish && TraitRules.Has(__instance.agent.squad, VanillaTraitsOverhaul.Fearless));
+        private static bool Prefix(Shield __instance) => !VanillaTraitsOverhaul.FearlessDefender(__instance.agent);
     }
 
     /// <summary>
@@ -344,7 +343,7 @@ namespace BadNorthMP.Traits
         // Fearless archers keep walking while they aim and shoot.
         private static void Postfix(Agent __instance)
         {
-            if (!TraitRules.Simulates || !__instance.isEnglish || !TraitRules.Has(__instance.squad, VanillaTraitsOverhaul.Fearless)) return;
+            if (!VanillaTraitsOverhaul.FearlessDefender(__instance)) return;
             if (__instance.brain is Archery archery && (archery.aiming.active || archery.shooting.active || (archery.ready.active && __instance.enemyAgent)))
             {
                 archery.order.ApplyWalk();

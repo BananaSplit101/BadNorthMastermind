@@ -9,11 +9,10 @@ namespace BadNorthMP.Telemetry
     /// <summary>
     /// The bugs that never throw an error:
     /// - a freeze: no frame for over 8 s (not while the game is in the background). A thread of its own notes it in the
-    ///   log while it lasts (so a freeze ended from Task Manager still shows in the crash report); once the game is back,
-    ///   it's reported, and it's an incident unless it happened while loading;
+    ///   log while it lasts, so a freeze ended from Task Manager still shows in the crash report; once the game is back
+    ///   it's reported, and an incident unless it happened while loading;
     /// - waiting for the others to load for over two minutes;
-    /// - the mastermind getting no battle updates from the campaign leader for 30 s in the middle of a battle.
-    /// (Loading that gets stuck or times out, and lost Vikings on boats, report themselves: ModLog.Problem.)
+    /// - the mastermind getting no battle updates from the campaign leader for 30 s mid-battle.
     /// </summary>
     internal static class Watchdogs
     {
@@ -23,18 +22,18 @@ namespace BadNorthMP.Telemetry
         /// <summary>How long the players have been waiting for each other to load (Reports.Look sets it).</summary>
         public static float WaitingFor;
 
+        // Shared with the watchdog thread.
         private static volatile int lastBeat;
         private static volatile bool beating, focused = true, unfocusedSinceBeat, running;
         private static volatile string frozenTag;
-        private static Thread thread;
+
         private static bool waitReported, silenceReported;
 
         public static void Start()
         {
             if (running) return;
             running = true;
-            thread = new Thread(Watch) { IsBackground = true, Name = "BadNorthMP watchdog" };
-            thread.Start();
+            new Thread(Watch) { IsBackground = true, Name = "BadNorthMP watchdog" }.Start();
         }
 
         public static void Stop() => running = false;

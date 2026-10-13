@@ -18,9 +18,9 @@ namespace BadNorthMP.Telemetry
 
     /// <summary>
     /// A game session's spool (BepInEx/BadNorthMP-logs/session-*.log): every log line and event of the session, written
-    /// as it happens, and the queue of what's still to be sent. A "*.sent" file beside it says how far it has been
-    /// sent (the last sequence number and the byte it ends at); "#END" at its end means the session closed properly.
-    /// So nothing is lost to a crash or to playing offline: the next launch sends what's left.
+    /// as it happens, and the queue of what's still to be sent, so nothing is lost to a crash or to playing offline.
+    /// A "*.sent" file beside it holds how far it has been sent ("lastSeq endOffset"); "#END" at its end means the
+    /// session closed properly.
     ///
     /// Format, one record a line (tabs and line breaks inside fields escaped):
     ///   #SESSION {meta json}
@@ -28,12 +28,13 @@ namespace BadNorthMP.Telemetry
     ///   E  seq  unixMs  {event json}
     ///   #END
     /// </summary>
-    internal sealed class SpoolFile : IDisposable
+    internal sealed class SpoolFile
     {
         public const long MaxBytes = 20L * 1024 * 1024; // a runaway session stops spooling here
         private static readonly UTF8Encoding Utf8 = new UTF8Encoding(false);
 
         public readonly string path;
+        // Appends come from any thread (log lines): writing is under the gate.
         private readonly object gate = new object();
         private StreamWriter writer;
         private long seq, bytes;
@@ -51,8 +52,6 @@ namespace BadNorthMP.Telemetry
             file.writer.Flush();
             return file;
         }
-
-        public long LastSeq { get { lock (gate) return seq; } }
 
         /// <summary>Adds a record (any thread); its sequence number, or 0 if the spool is full or closed.</summary>
         public long Append(SpoolRecord record, bool flush)
@@ -101,8 +100,6 @@ namespace BadNorthMP.Telemetry
             }
         }
 
-        public void Dispose() => End();
-
         private void WriteLine(string line)
         {
             writer.Write(line);
@@ -114,10 +111,10 @@ namespace BadNorthMP.Telemetry
 
         public static string Format(SpoolRecord r)
         {
-            if (r.isEvent) return "E\t" + r.seq.ToString(CultureInfo.InvariantCulture) + "\t" + r.unixMs.ToString(CultureInfo.InvariantCulture) + "\t" + Escape(r.json);
-            return "L\t" + r.seq.ToString(CultureInfo.InvariantCulture) + "\t" + r.unixMs.ToString(CultureInfo.InvariantCulture) + "\t" +
-                r.severity.ToString(CultureInfo.InvariantCulture) + "\t" + Escape(r.source) + "\t" + Escape(r.context) + "\t" +
-                Escape(r.incidents) + "\t" + Escape(r.text);
+            string head = r.seq.ToString(CultureInfo.InvariantCulture) + "\t" + r.unixMs.ToString(CultureInfo.InvariantCulture) + "\t";
+            if (r.isEvent) return "E\t" + head + Escape(r.json);
+            return "L\t" + head + r.severity.ToString(CultureInfo.InvariantCulture) + "\t" + Escape(r.source) + "\t" +
+                Escape(r.context) + "\t" + Escape(r.incidents) + "\t" + Escape(r.text);
         }
 
         /// <summary>A record line back (null if it isn't one).</summary>
@@ -175,9 +172,8 @@ namespace BadNorthMP.Telemetry
             return sb.ToString();
         }
 
-        // ---- Reading what's still to send --------------------------------------------------------------------------
+        // ---- Reading what's still to send (also while the session is writing it) ---------------------------------
 
-        /// <summary>A stretch of a spool not sent yet.</summary>
         internal sealed class Unsent
         {
             public string path, meta = "{}";
@@ -186,6 +182,9 @@ namespace BadNorthMP.Telemetry
             public bool ended;      // its "#END" was reached: the session closed properly
             public bool reachedEnd; // nothing after this stretch (yet)
         }
+
+        private static FileStream OpenRead(string path) =>
+            new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
         /// <summary>
         /// Up to about <paramref name="maxBytes"/> of the spool after what has been sent: whole lines only (the one being
@@ -196,7 +195,7 @@ namespace BadNorthMP.Telemetry
             var result = new Unsent { path = path };
             ReadSent(path, out long sentSeq, out long offset);
             result.lastSeq = sentSeq;
-            using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            using (FileStream stream = OpenRead(path))
             {
                 long headerEnd = ReadHeader(stream, out string meta);
                 result.meta = meta ?? "{}";
@@ -288,26 +287,15 @@ namespace BadNorthMP.Telemetry
         /// <summary>Whether a spool's session closed properly ("#END" at its end).</summary>
         public static bool Ended(string path)
         {
-            try
-            {
-                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-                {
-                    long from = Math.Max(0, stream.Length - 16);
-                    stream.Position = from;
-                    var tail = new byte[stream.Length - from];
-                    stream.Read(tail, 0, tail.Length);
-                    return Utf8.GetString(tail).TrimEnd('\n', '\r').EndsWith("#END");
-                }
-            }
+            try { return ReadEnd(path, 16, out _).TrimEnd('\n', '\r').EndsWith("#END"); }
             catch (IOException) { return false; }
         }
 
-        /// <summary>The meta of a spool's session.</summary>
         public static string Meta(string path)
         {
             try
             {
-                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (FileStream stream = OpenRead(path))
                 {
                     ReadHeader(stream, out string meta);
                     return meta ?? "{}";
@@ -322,23 +310,30 @@ namespace BadNorthMP.Telemetry
             var lines = new List<string>();
             try
             {
-                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                string[] all = ReadEnd(path, maxBytes, out bool cut).Split('\n');
+                for (int i = cut ? 1 : 0; i < all.Length; i++) // the first may be cut off
                 {
-                    long from = Math.Max(0, stream.Length - maxBytes);
-                    stream.Position = from;
-                    var data = new byte[stream.Length - from];
-                    int read = 0, got;
-                    while (read < data.Length && (got = stream.Read(data, read, data.Length - read)) > 0) read += got;
-                    string[] all = Utf8.GetString(data, 0, read).Split('\n');
-                    for (int i = from > 0 ? 1 : 0; i < all.Length; i++) // the first may be cut off
-                    {
-                        SpoolRecord record = Parse(all[i]);
-                        if (record != null && !record.isEvent) lines.Add(Readable(record));
-                    }
+                    SpoolRecord record = Parse(all[i]);
+                    if (record != null && !record.isEvent) lines.Add(Readable(record));
                 }
             }
             catch (IOException) { }
             return lines;
+        }
+
+        /// <summary>The last <paramref name="maxBytes"/> of a file as text; <paramref name="cut"/> if it starts mid-file.</summary>
+        public static string ReadEnd(string path, int maxBytes, out bool cut)
+        {
+            using (FileStream stream = OpenRead(path))
+            {
+                long from = Math.Max(0, stream.Length - maxBytes);
+                cut = from > 0;
+                stream.Position = from;
+                var data = new byte[stream.Length - from];
+                int read = 0, got;
+                while (read < data.Length && (got = stream.Read(data, read, data.Length - read)) > 0) read += got;
+                return Utf8.GetString(data, 0, read);
+            }
         }
 
         /// <summary>A log record as a log line reads: "12:00:01.250 [Warning: Source] text".</summary>

@@ -14,8 +14,7 @@ namespace BadNorthMP.Telemetry
     }
 
     /// <summary>
-    /// Unity's error text made into what PostHog groups errors by: the exception type and message, its stack frames
-    /// (newest first, as Unity writes them), and a fingerprint that stays the same however often the error comes back.
+    /// Error text made into what PostHog groups errors by: type, message, frames (newest first) and a fingerprint.
     /// Takes every stack format the game produces: Mono's "Ns.Type.Method (args) &lt;0x1d&gt;", Unity's
     /// "Ns.Type:Method(Args)", .NET's "at Ns.Type.Method () [0x0] in &lt;file&gt;:0", "(wrapper dynamic-method)" frames
     /// and Harmony's patched copies ("DMD&lt;Ns.Type..Method&gt;").
@@ -117,7 +116,7 @@ namespace BadNorthMP.Telemetry
 
         /// <summary>
         /// What makes two errors the same: the type and the top four frames that aren't logging (or, with no stack, the
-        /// message with its numbers blanked out), hashed to 16 hex digits.
+        /// message with its numbers blanked out), hashed to 16 hex digits. PostHog groups errors by it across versions.
         /// </summary>
         public static string Fingerprint(string type, string value, List<StackFrame> frames)
         {
@@ -133,7 +132,7 @@ namespace BadNorthMP.Telemetry
             return Hash64(sb.ToString()).ToString("x16");
         }
 
-        /// <summary>A message with its numbers (counts, ids, positions) blanked, so repeats match.</summary>
+        /// <summary>A message with its numbers blanked, so repeats match.</summary>
         public static string Normalize(string message, int max)
         {
             if (string.IsNullOrEmpty(message)) return "";

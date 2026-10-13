@@ -1,10 +1,8 @@
-using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 using Voxels.TowerDefense;
 using Voxels.TowerDefense.Upgrades;
-using Object = UnityEngine.Object;
 using Random = UnityEngine.Random;
 
 namespace BadNorthMP.Traits
@@ -227,13 +225,15 @@ namespace BadNorthMP.Traits
 
     /// <summary>
     /// The visible side of the traits, also for watchers' copies of the leader's soldiers (PuppetWorld), which don't run
-    /// the traits themselves: Short soldiers are smaller, Mountain ones are giants with the Brute's moves, Fearless
-    /// infantry dual-wield without a shield.
+    /// the traits themselves.
     /// </summary>
     internal static class TraitVisuals
     {
         public const float ShortScale = 0.85f;
         private static readonly float[] GiantHeroScale = { 1.2f, 1.3f, 1.4f, 1.5f }, GiantScale = { 1.15f, 1.22f, 1.29f, 1.35f };
+
+        /// <summary>A Mountain soldier's scale at squad level 0-3.</summary>
+        public static float GiantSize(bool commander, int level) => (commander ? GiantHeroScale : GiantScale)[level];
 
         public static void HideShield(Agent agent)
         {
@@ -256,7 +256,7 @@ namespace BadNorthMP.Traits
             if (trait == TraitsGalore.Short) agent.scale *= ShortScale;
             if (trait == VanillaTraitsOverhaul.Mountain)
             {
-                agent.scale = (commander ? GiantHeroScale : GiantScale)[level];
+                agent.scale = GiantSize(commander, level);
                 if (infantry) VanillaTraitsOverhaul.ConvertToTank(agent, commander);
             }
             if (trait == VanillaTraitsOverhaul.Fearless && infantry)
