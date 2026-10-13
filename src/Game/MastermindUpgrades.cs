@@ -18,8 +18,7 @@ namespace BadNorthMP.Game
         public static float Multiplier(int level) => 1f + 0.25f * Mathf.Clamp(level, 0, MaxLevel);
         public static int CrewCount(int paidCount, int level) => paidCount + paidCount * Mathf.Clamp(level, 0, MaxLevel) / 4;
         public static int Cost(VikingReference type, UnitUpgrade kind, int currentLevel) =>
-            !type || !ValidKind(kind) || currentLevel < 0 || currentLevel >= MaxLevel ? 0 :
-            Cost(Economy.UnitCost(type), kind, currentLevel);
+            type ? Cost(Economy.UnitCost(type), kind, currentLevel) : 0;
         public static int Cost(int unitCost, UnitUpgrade kind, int currentLevel) =>
             unitCost <= 0 || !ValidKind(kind) || currentLevel < 0 || currentLevel >= MaxLevel ? 0 :
             unitCost * (kind == UnitUpgrade.Count ? 12 + 6 * currentLevel : 8 + 4 * currentLevel);
@@ -149,5 +148,4 @@ namespace BadNorthMP.Game
         private static void Prefix(Agent shooter, ref AttackSettings attackSettings) =>
             attackSettings.damage *= MastermindUpgrades.DamageMultiplier(shooter);
     }
-
 }

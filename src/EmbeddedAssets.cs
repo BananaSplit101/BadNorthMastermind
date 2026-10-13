@@ -4,10 +4,7 @@ using UnityEngine;
 
 namespace BadNorthMP
 {
-    /// <summary>
-    /// Pictures and sounds shipped inside the DLL (assets/ in the repo), so an update that only swaps the DLL
-    /// still brings them along.
-    /// </summary>
+    /// <summary>Pictures and sounds shipped inside the DLL (assets/ in the repo), so an update that only swaps the DLL brings them too.</summary>
     internal static class EmbeddedAssets
     {
         private static readonly Dictionary<string, Texture2D> textures = new Dictionary<string, Texture2D>();
@@ -40,7 +37,7 @@ namespace BadNorthMP
             return texture;
         }
 
-        /// <summary>A copy on disk (Unity loads sounds from a file URL), written once per session.</summary>
+        /// <summary>A copy on disk (Unity loads sounds from a file URL), rewritten only when missing or a different size.</summary>
         public static string File(string name)
         {
             byte[] bytes = Bytes(name);

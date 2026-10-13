@@ -10,9 +10,8 @@ using Voxels.TowerDefense.UI;
 namespace BadNorthMP.Game
 {
     /// <summary>
-    /// Multiplayer campaigns live in their own save slots (100+, so files "campaign - 100" etc.). The
-    /// single-player menus only read slots 0-4, so the two never mix. Everything else (loading, saving,
-    /// checkpoints) is the game's own code working on those slot numbers.
+    /// Multiplayer campaigns live in their own save slots (100+, files "campaign - 100" etc.), which the single-player
+    /// menus (slots 0-4) never read. Loading, saving and checkpoints are the game's own code on those slots.
     /// </summary>
     internal static class MultiplayerCampaigns
     {
@@ -126,8 +125,6 @@ namespace BadNorthMP.Game
                 Saves[index] = meta;
         }
     }
-
-    // ---- Hooks into the game's save code -------------------------------------------------------
 
     [HarmonyPatch(typeof(NewGameOptionsPopup), nameof(NewGameOptionsPopup.OpenMenu))]
     internal static class NewGamePopupOpenPatch

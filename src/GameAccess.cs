@@ -3,7 +3,6 @@ using Voxels.TowerDefense;
 
 namespace BadNorthMP
 {
-    /// <summary>Helpers for reaching into the game's island and squad state.</summary>
     internal static class GameAccess
     {
         /// <summary>The island currently loaded for gameplay, or null on menus and the campaign map.</summary>

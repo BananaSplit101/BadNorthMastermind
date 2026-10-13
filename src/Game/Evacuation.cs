@@ -8,13 +8,10 @@ using Voxels.TowerDefense.Upgrades;
 namespace BadNorthMP.Game
 {
     /// <summary>
-    /// Fleeing on beached Viking longships in a multiplayer battle (leader side).
-    ///
-    /// Natively every ship is spawned up front and Island.PlayIsland sets up their evacuation spots, and each
-    /// squad's EvacuateAbility caches the island's landings when it spawns. Mastermind ships arrive later, so
-    /// both steps are repeated here. Boats are found by scanning the landings directly: EvacuateAbility's own
-    /// UpdateTargets also clears boat highlights and plays a sound, which mustn't happen on the leader's screen
-    /// for a teammate's squad.
+    /// Fleeing on beached Viking longships in a multiplayer battle (leader side). Natively every ship spawns up front,
+    /// Island.PlayIsland sets up their evacuation spots and each squad's EvacuateAbility caches the landings as it
+    /// spawns; mastermind ships come later, so both are repeated here. Boats are found by scanning the landings, as
+    /// EvacuateAbility.UpdateTargets also clears highlights and plays a sound on the leader's screen for a teammate's squad.
     /// </summary>
     internal static class Evacuation
     {
@@ -60,7 +57,7 @@ namespace BadNorthMP.Game
         public static bool CanFlee(EnglishSquad squad)
         {
             var ability = squad.upgradeManager ? squad.upgradeManager.GetUpgrade<EvacuateAbility>() : null;
-            return ability && !ability.isBanned && !ability.IsBlocked() && Boats(squad, out bool unused).Count > 0;
+            return ability && !ability.isBanned && !ability.IsBlocked() && Boats(squad, out _).Count > 0;
         }
 
         /// <summary>Leader: send a squad to a boat (the nearest suitable one when none is given).</summary>

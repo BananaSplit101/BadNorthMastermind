@@ -21,7 +21,7 @@ namespace BadNorthMP.Game
         public static float PartyScale(int defenders, float perExtraDefender) =>
             1f + System.Math.Max(0f, perExtraDefender) * System.Math.Max(0, defenders - 1);
 
-        // ---- War chest: persistent gold for upgrades (and later commanders) ----
+        // ---- War chest: persistent gold for upgrades and commanders ----
 
         /// <summary>Paid into the war chest during battle.</summary>
         public const int RewardHouse = 5;

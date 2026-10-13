@@ -17,10 +17,9 @@ using Voxels.TowerDefense.Upgrades;
 namespace BadNorthMP.Game
 {
     // Commanders sail in: ported from GMW's "Commanders Sail In" 2.4.1 (used with permission).
-    // On the campaign leader, a deployed commander's squad arrives on a fast friendly longship at the beach nearest
-    // its spot instead of appearing there; a village commander walks out of a house once the boats are in. Ships and
-    // soldiers reach other players through the usual battle mirroring; the cinematic (camera following the boat,
-    // black bars, war cry) plays for everyone, driven by MsgType.SailIn.
+    // On the campaign leader a deployed commander's squad arrives on a friendly longship at the beach nearest its spot;
+    // a village commander walks out of a house once the boats are in. Ships and soldiers reach other players through
+    // battle mirroring; the cinematic (camera, black bars, war cry) plays for everyone, driven by MsgType.SailIn.
 
     internal static class SailIn
     {
@@ -30,7 +29,7 @@ namespace BadNorthMP.Game
 
         public static bool Enabled => ModConfig.SailIn != null && ModConfig.SailIn.Value && !SpectatorSession.Active;
 
-        /// <summary>Leader: a commander's boat is still on its way (Viking waves and the mastermind's clock wait).</summary>
+        /// <summary>Leader: a commander's boat is still on its way (Viking waves wait for it).</summary>
         public static bool Arriving
         {
             get
@@ -51,10 +50,7 @@ namespace BadNorthMP.Game
 
         private static float loadingSeenAt = -100f;
 
-        /// <summary>
-        /// Leader: commanders set sail only once every player has the island loaded (LoadGate), and a moment after
-        /// the loading screen is gone, so nobody misses the boats or the cinematic.
-        /// </summary>
+        /// <summary>Leader: every player has the island loaded (LoadGate) and the loading screen has been gone a moment, so nobody misses the boats.</summary>
         public static bool EveryoneIn
         {
             get
@@ -65,10 +61,7 @@ namespace BadNorthMP.Game
             }
         }
 
-        /// <summary>
-        /// Watchers: the leader's cinematic cue for a mirrored boat. Someone still loading their island when it comes
-        /// gets the cinematic once they're in, if the boat hasn't reached the shore by then.
-        /// </summary>
+        /// <summary>Watchers: the leader's cinematic cue for a mirrored boat; someone still loading gets it once they're in, if the boat is still at sea.</summary>
         public static void Received(byte phase, int shipId, Vector3 point)
         {
             if (phase == Follow)
@@ -92,13 +85,19 @@ namespace BadNorthMP.Game
             return landings;
         }
 
-        /// <summary>A recruited commander: across the sea on a longship to the beach nearest its spot.</summary>
-        public static IEnumerator<bool> SailInRoutine(HeroDefinition heroDef, NavSpot targetNavSpot, SquadSpawner spawner, Island island)
+        /// <summary>A squad still hidden, as SquadSpawner.SpawnEnglishSquad starts one.</summary>
+        private static EnglishSquad NewSquad(HeroDefinition heroDef, NavSpot targetNavSpot, Island island)
         {
             EnglishSquad squad = ScriptableObjectSingleton<PrefabManager>.instance.englishSquad.SpawnGetFromPrefab(targetNavSpot.navPos, island.english) as EnglishSquad;
             squad.squadTemplate = ScriptableObjectSingleton<PrefabManager>.instance.militiaTemplate;
             squad.hero = heroDef;
             squad.gameObject.SetActive(false);
+            return squad;
+        }
+
+        /// <summary>The hero, upgrades and soldiers, step by step as SpawnEnglishSquad does, but leaving the squad hidden.</summary>
+        private static IEnumerable<bool> Build(EnglishSquad squad, HeroDefinition heroDef, NavSpot targetNavSpot)
+        {
             yield return true;
             squad.SpawnHero(targetNavSpot.navPos);
             yield return true;
@@ -115,8 +114,22 @@ namespace BadNorthMP.Game
             }
             IEnumerator fill = squad.FillRoutine(targetNavSpot);
             while (fill.MoveNext()) yield return false;
+        }
 
-            // Nobody sets sail until every player has the island loaded.
+        private static IEnumerable<bool> Finish(EnglishSquad squad, SquadSpawner spawner)
+        {
+            squad.OnSquadSpawnComplete();
+            yield return false;
+            Traverse.Create(spawner).Field<Action<EnglishSquad>>("onSquadSpawned").Value?.Invoke(squad);
+            yield return false;
+        }
+
+        /// <summary>A recruited commander: across the sea on a longship to the beach nearest its spot.</summary>
+        public static IEnumerator<bool> SailInRoutine(HeroDefinition heroDef, NavSpot targetNavSpot, SquadSpawner spawner, Island island)
+        {
+            EnglishSquad squad = NewSquad(heroDef, targetNavSpot, island);
+            foreach (bool step in Build(squad, heroDef, targetNavSpot)) yield return step;
+
             while (!EveryoneIn) yield return true;
 
             Longship shipPrefab = island.levelNode.possibleShips.LastOrDefault();
@@ -188,10 +201,7 @@ namespace BadNorthMP.Game
                 }
                 yield return true;
             }
-            squad.OnSquadSpawnComplete();
-            yield return false;
-            Traverse.Create(spawner).Field<Action<EnglishSquad>>("onSquadSpawned").Value?.Invoke(squad);
-            yield return false;
+            foreach (bool step in Finish(squad, spawner)) yield return step;
         }
 
         /// <summary>The configured boat speed (the original's default is a little slower than a raid ship).</summary>
@@ -208,26 +218,8 @@ namespace BadNorthMP.Game
         /// <summary>A village commander: waits indoors until the boats are in, then walks out of a house.</summary>
         public static IEnumerator<bool> LocalCommanderRoutine(HeroDefinition heroDef, NavSpot targetNavSpot, SquadSpawner spawner, Island island)
         {
-            EnglishSquad squad = ScriptableObjectSingleton<PrefabManager>.instance.englishSquad.SpawnGetFromPrefab(targetNavSpot.navPos, island.english) as EnglishSquad;
-            squad.squadTemplate = ScriptableObjectSingleton<PrefabManager>.instance.militiaTemplate;
-            squad.hero = heroDef;
-            squad.gameObject.SetActive(false);
-            yield return true;
-            squad.SpawnHero(targetNavSpot.navPos);
-            yield return true;
-            SquadUpgradeManager upgrades = squad.upgradeManager;
-            foreach (UpgradeComponent universal in ScriptableObjectSingleton<PrefabManager>.instance.universalUpgrades)
-            {
-                upgrades.AddUpgrade(universal, 0);
-                yield return false;
-            }
-            foreach (SerializableHeroUpgrade upgrade in heroDef.upgrades)
-            {
-                upgrade.definition.OnAppliedToSquad(squad, upgrade.level);
-                yield return true;
-            }
-            IEnumerator fill = squad.FillRoutine(targetNavSpot);
-            while (fill.MoveNext()) yield return false;
+            EnglishSquad squad = NewSquad(heroDef, targetNavSpot, island);
+            foreach (bool step in Build(squad, heroDef, targetNavSpot)) yield return step;
 
             List<House> houses = island.village.houses.Where(h => h && h.intact && !h.destroyed).ToList();
             House house = houses.Count > 0 ? houses[UnityEngine.Random.Range(0, houses.Count)] : null;
@@ -245,9 +237,8 @@ namespace BadNorthMP.Game
                     agent.transform.position = home.entranceTransform.position;
                     ReplenishComponent replenish = agent.GetOrAddComponent<ReplenishComponent>();
                     Traverse.Create(replenish).Field("location").SetValue(home);
-                    // The commander plants their flag on the house before going in, as the game does: indoors hides the
-                    // soldier, flag pole included, and a hidden flag can't be planted ("Coroutine couldn't be started
-                    // because the game object 'Billboard' is inactive").
+                    // Plant the flag before going in, as the game does: indoors hides the flag pole too, and a hidden
+                    // flag can't be planted ("Coroutine couldn't be started because the game object 'Billboard' is inactive").
                     if (agent == squad.heroAgent)
                     {
                         FlagPole pole = Traverse.Create(replenish).Field<FlagPole>("flagPole").Value;
@@ -287,10 +278,7 @@ namespace BadNorthMP.Game
                     for (float wait = 0.15f; wait > 0f; wait -= Time.deltaTime) yield return false;
                 }
             }
-            squad.OnSquadSpawnComplete();
-            yield return false;
-            Traverse.Create(spawner).Field<Action<EnglishSquad>>("onSquadSpawned").Value?.Invoke(squad);
-            yield return false;
+            foreach (bool step in Finish(squad, spawner)) yield return step;
         }
     }
 
@@ -360,8 +348,8 @@ namespace BadNorthMP.Game
     }
 
     /// <summary>
-    /// The camera part of the cinematic, shared by the leader (following its real boat) and everyone watching
-    /// (following the mirrored one): zoom in and follow, then glide back out over the landing beach.
+    /// The cinematic's camera, for the leader's real boat and watchers' mirrored ones: zoom in and follow, then glide
+    /// back out over the landing beach.
     /// </summary>
     internal sealed class SailInCamera : MonoBehaviour
     {
@@ -568,7 +556,6 @@ namespace BadNorthMP.Game
 
         public static void Bars(bool shown) => Instance().barsWanted = shown;
 
-        /// <summary>One of the two war cries, at most every five seconds.</summary>
         public static void WarCry()
         {
             SailInEffects self = Instance();
@@ -671,8 +658,8 @@ namespace BadNorthMP.Game
     }
 
     /// <summary>
-    /// Native Viking waves wait until the commanders' boats are in. Mastermind waves are launched by CustomWaves
-    /// (which needs the first step at once); the mastermind's clock pauses instead (Economy.Tick).
+    /// Native Viking waves wait until the commanders' boats are in. Mastermind waves are launched by CustomWaves, which
+    /// needs the first step at once, so a due one waits in Economy.Tick instead.
     /// </summary>
     [HarmonyPatch(typeof(Wave), nameof(Wave.BeginWave))]
     internal static class SailInWaveDelayPatch

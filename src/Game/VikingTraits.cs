@@ -1,4 +1,3 @@
-using System;
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
@@ -43,10 +42,10 @@ namespace BadNorthMP.Game
 
         public static float BaseValue(float value) => value * ModConfig.TraitFactor();
 
-        /// <summary>Leader: the squad gets the trait, one random Viking carries the flag. Returns the flag-bearer.</summary>
-        public static Agent Apply(Squad squad, VikingTrait trait)
+        /// <summary>Leader: the squad gets the trait, one random Viking carries the flag.</summary>
+        public static void Apply(Squad squad, VikingTrait trait)
         {
-            if (!squad || trait == VikingTrait.None || squad.agents.Count == 0) return null;
+            if (!squad || trait == VikingTrait.None || squad.agents.Count == 0) return;
             Agent bearer = squad.agents[UnityEngine.Random.Range(0, squad.agents.Count)];
             foreach (Agent agent in squad.agents)
             {
@@ -54,7 +53,6 @@ namespace BadNorthMP.Game
                 agent.gameObject.AddComponent<VikingTraitController>().Initialize(trait, agent == bearer);
             }
             if (bearer) VikingFlag.Attach(bearer, trait);
-            return bearer;
         }
 
         public static Agent FlagBearer(Squad squad)

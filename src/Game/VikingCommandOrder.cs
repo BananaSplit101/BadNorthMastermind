@@ -6,16 +6,11 @@ using Voxels.TowerDefense;
 namespace BadNorthMP.Game
 {
     /// <summary>
-    /// "Go to this tile" for a mastermind commander's Vikings (leader side), moving the way defender squads do
-    /// (EnglishPatherAgent + EnglishFormationAgent): follow the tile's path, then step into an own formation slot
-    /// around it and face outward. The shared Swordsman combat AI only chases enemies near the ordered destination,
-    /// so ordering a squad away makes it disengage and retreat like defenders do.
-    /// Arrival, unsticking and torch rules come from ABaLaQiYaShanMaiI's BadNorthNewMode (GroupOrder, MIT):
-    /// - once in place they stand still (no shoving each other = no twitching), and only start again if pushed away;
-    /// - a Viking stuck for 1.5 s sidesteps for a moment;
-    /// - the torch thrower only stays active next to its house (it otherwise throws from anywhere once
-    ///   "close to the ordered tile").
-    /// An order given while still on the ship waits there and is followed as soon as they land.
+    /// "Go to this tile" for a mastermind commander's Vikings (leader side), moving like defender squads
+    /// (EnglishPatherAgent + EnglishFormationAgent): follow the tile's path, then step into a formation slot and face
+    /// outward. The Swordsman combat AI only chases enemies near the ordered destination, so ordering a squad away makes
+    /// it disengage. Arrival (standing still once in place, so no shoving and twitching), unsticking and torch rules come
+    /// from ABaLaQiYaShanMaiI's BadNorthNewMode (GroupOrder, MIT). An order given on the ship is followed once they land.
     /// </summary>
     internal sealed class VikingCommandOrder : MonoBehaviour, IAgentOrder
     {
@@ -179,16 +174,10 @@ namespace BadNorthMP.Game
 
         public void ApplyOrder()
         {
-            if (settled)
-            {
-                agent.walkDir = Vector3.zero;
-                agent.movability = SettledMovability;
-                // In place: face out from the tile like a defender squad.
-                agent.LookInDirection(target.lookDir);
-                return;
-            }
             ApplyWalk();
-            agent.LookInDirection(agent.orderDir, 720f, 20f);
+            // In place: face out from the tile like a defender squad.
+            if (settled) agent.LookInDirection(target.lookDir);
+            else agent.LookInDirection(agent.orderDir, 720f, 20f);
         }
 
         public void ApplyWalk()
