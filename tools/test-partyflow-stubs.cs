@@ -209,6 +209,10 @@ namespace BadNorthMP.Net {
  PartyFlow.ChooseCommander(0,7);Check(PartyFlow.PendingPick&&PartyFlow.Mine.choices[0]==7,"portrait choice not saved optimistically");Router.Receive(1,stale);
  Check(PartyFlow.PendingPick&&PartyFlow.Mine.choices[0]==7,"stale host echo erased the last portrait pick");int sent=SteamSession.Instance.sent.Count;PartyFlow.Ready();Check(sent==SteamSession.Instance.sent.Count,"Ready raced unconfirmed selection");
  var ack=Packet.Build(MsgType.PartyState,w=>{PartyFlow.State.Write(w);w.Write("ack");});Router.Receive(1,ack);Check(!PartyFlow.PendingPick,"matching host ack did not unlock Ready");PartyFlow.Ready();Check(PartyFlow.PendingPick&&PartyFlow.Mine.ready,"Ready not pending host confirmation");
+ // The draft shows the campaign's difficulty and restarts: a new campaign's from the mastermind, a continued save's own.
+ Reset(1);PartyFlow.Difficulty=3;PartyFlow.AllowReplays=false;PartyFlow.StartDraft();Check(PartyFlow.State.difficulty==3&&!PartyFlow.State.allowReplays&&Copy(PartyFlow.State).difficulty==3&&!Copy(PartyFlow.State).allowReplays,"a new campaign's settings not shown, or lost on the wire");
+ Reset(1);PartyFlow.SaveDifficulty[3]=4;PartyFlow.SaveAllowReplays[3]=true;PartyFlow.SaveChoice=3;PartyFlow.StartDraft();PartyFlow.SaveChoice=-1;Check(PartyFlow.State.difficulty==4&&PartyFlow.State.allowReplays&&Copy(PartyFlow.State).difficulty==4,"a continued save's own settings not shown");
+ PartyFlow.Difficulty=2;PartyFlow.AllowReplays=true;
  // Continuing a save: the party state says so, and picks (portraits, traits, items) are ignored; Ready still works.
  Reset(1);PartyFlow.SaveChoice=2;PartyFlow.StartDraft();PartyFlow.SaveChoice=-1;Check(PartyFlow.State.Continuing&&PartyFlow.State.continuing==2&&Copy(PartyFlow.State).continuing==2,"continued save not marked, or lost on the wire");
  SteamSession.Instance.Me=Id(2);int sentBefore=SteamSession.Instance.sent.Count;PartyFlow.ChooseCommander(0,5);PartyFlow.CycleUpgrade(0,true,1);

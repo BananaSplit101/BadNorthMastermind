@@ -17,6 +17,8 @@ namespace BadNorthMP.UI
         public GameObject root;
         /// <summary>How far the card's arrow tabs reach past each side when slid out (CardTabs.Reach).</summary>
         public float TabReach;
+        /// <summary>The card's scale from the game's own size: the draft's copy of the New Game panel uses the same.</summary>
+        public float Scale;
 
         // The starting trait and item shown on the card (name and icon), updated in place when they change.
         private sealed class Carousel { public bool item; public Text name; public MaskedSprite icon; public Sprite emptySprite, emptyMask; }
@@ -69,14 +71,29 @@ namespace BadNorthMP.UI
             for (var current = child; current && current != stop; current = current.parent)
                 current.gameObject.SetActive(true);
         }
-        public static NativeCommanderCard Create(Transform parent, HeroDefinition hero, Action<int> cycle, Action<int> traitCycle, Action<int> itemCycle, float cardWidth = 310)
+        /// <summary>The game's New Game commander card that's copied, or null.</summary>
+        private static Component Template()
         {
             var type = AccessTools.TypeByName("Voxels.TowerDefense.UI.NewGameHeroSelector");
-            Component template = null;
             if (type != null)
                 foreach (var candidate in Resources.FindObjectsOfTypeAll(type))
                     if (candidate is Component component && Traverse.Create(component).Field<HeroCustomizer>("heroCustomizer").Value)
-                    { template = component; break; }
+                        return component;
+            return null;
+        }
+
+        /// <summary>The scale a card <paramref name="cardWidth"/> wide (at most 420 tall) is drawn at (1 if there's no card to copy).</summary>
+        public static float ScaleFor(float cardWidth)
+        {
+            var template = Template();
+            if (!template) return 1f;
+            var rect = ((RectTransform)template.transform).rect;
+            return Mathf.Min(cardWidth / Mathf.Max(1, rect.width), 420f / Mathf.Max(1, rect.height));
+        }
+
+        public static NativeCommanderCard Create(Transform parent, HeroDefinition hero, Action<int> cycle, Action<int> traitCycle, Action<int> itemCycle, float cardWidth = 310)
+        {
+            Component template = Template();
             if (!template)
             {
                 ModLog.Warn("Native commander card is unavailable; selection remains unconfirmed.");
@@ -122,7 +139,7 @@ namespace BadNorthMP.UI
                     var driver = Traverse.Create(slave).Field<UpgradeCarousel>("driver").Value;
                     if (driver) slaves.Add(new KeyValuePair<UpgradeCarousel, Transform>(driver, slave.transform));
                 }
-            var selector = Traverse.Create(clone.GetComponent(type));
+            var selector = Traverse.Create(clone.GetComponent(template.GetType()));
             var itemCarousel = selector.Field<UpgradeCarousel>("itemCarousel").Value;
             // Snapshot the carousel references before removing their controllers.
             foreach (var carousel in clone.GetComponentsInChildren<UpgradeCarousel>(true))
@@ -209,6 +226,7 @@ namespace BadNorthMP.UI
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
             rect.sizeDelta = new Vector2(width, height);
             rect.anchoredPosition = Vector2.zero; rect.localScale = Vector3.one * scale;
+            card.Scale = scale;
             card.TabReach = CardTabs.Reach(holder, rect);
             foreach (var arrow in arrows)
             {

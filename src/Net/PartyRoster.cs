@@ -29,6 +29,8 @@ namespace BadNorthMP.Net
         // The multiplayer save being continued (picker slot 0..4; its commanders come from the save), or -1 for a new campaign.
         public int continuing = -1;
         public bool Continuing => continuing >= 0;
+        // The campaign's "Allow level restarts" (the new campaign's setting, or the continued save's), shown in the draft.
+        public bool allowReplays = true;
         public const int MaxHeroes = 10;
         public bool AllReady
         {
@@ -192,6 +194,7 @@ namespace BadNorthMP.Net
                 foreach (int hero in seat.recruits) w.Write(hero);
             }
             w.Write((sbyte)continuing);
+            w.Write(allowReplays);
         }
         public static PartyRoster Read(BinaryReader r)
         {
@@ -242,6 +245,7 @@ namespace BadNorthMP.Net
             }
             result.continuing = r.ReadSByte();
             if (result.continuing < -1 || result.continuing > 4) throw new IOException("Invalid continued save");
+            result.allowReplays = r.ReadBoolean();
             if (result.Find(result.authority) == null) throw new IOException("Missing campaign authority");
             return result;
         }

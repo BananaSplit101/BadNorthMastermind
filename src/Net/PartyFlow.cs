@@ -23,6 +23,9 @@ namespace BadNorthMP.Net
         public static readonly bool[] Saved = new bool[5];
         public static readonly bool[] Occupied = new bool[5];
         public static readonly string[] SaveDetails = new string[5];
+        // Each multiplayer save's difficulty (0 unknown) and "Allow level restarts", from the leader's catalogue.
+        public static readonly int[] SaveDifficulty = new int[5];
+        public static readonly bool[] SaveAllowReplays = new bool[5];
         public static bool CatalogReady, AllowReplays = true;
         public static int NewSaveSlot = -1;
         public static bool Active => SteamSession.Instance && SteamSession.Instance.InLobby && State.phase != 0;
@@ -187,6 +190,11 @@ namespace BadNorthMP.Net
                             if (!PartyRoster.Allowed(State.allowedItems, seat.items[i])) { seat.items[i] = ""; seat.ready = false; }
                         }
                 }
+                for (int i = 0; i < Saved.Length; i++)
+                {
+                    SaveDifficulty[i] = 0; SaveAllowReplays[i] = true;
+                    if (r.BaseStream.Position < r.BaseStream.Length) { SaveDifficulty[i] = r.ReadByte(); SaveAllowReplays[i] = r.ReadBoolean(); }
+                }
                 CatalogReady = true;
             });
             Router.On(MsgType.PartyDeleteSave, (sender, r) =>
@@ -283,7 +291,7 @@ namespace BadNorthMP.Net
             catalogSent = false; SaveChoice = -1;
             NewMapPending = BeginFailed = false;
             Array.Clear(Saved, 0, Saved.Length);
-            Array.Clear(Occupied, 0, Occupied.Length); Array.Clear(SaveDetails, 0, SaveDetails.Length);
+            Array.Clear(Occupied, 0, Occupied.Length); Array.Clear(SaveDetails, 0, SaveDetails.Length); Array.Clear(SaveDifficulty, 0, SaveDifficulty.Length);
             CatalogReady = false; NewSaveSlot = -1;
             Status = IdleStatus;
         }
@@ -348,6 +356,11 @@ namespace BadNorthMP.Net
                                 (meta.gameOver ? "    Campaign ended" : ""));
                         }
                         PartyRoster.WriteNames(w, PartyLoadout.Catalog(true)); PartyRoster.WriteNames(w, PartyLoadout.Catalog(false));
+                        foreach (var meta in MultiplayerCampaigns.Saves)
+                        {
+                            w.Write((byte)(meta == null ? 0 : (int)meta.prefs.difficulty));
+                            w.Write(meta == null || meta.prefs.allowReplays);
+                        }
                     }));
                     catalogSent = true;
                 }
@@ -429,7 +442,10 @@ namespace BadNorthMP.Net
             RefreshContext();
             if (!Session.IsHost || !Roles.HasMastermind || Active) return;
             State.seed = new System.Random().Next(1, int.MaxValue);
-            State.difficulty = Difficulty;
+            // A continued save keeps its own difficulty and restarts: the draft shows those.
+            bool saved = SaveChoice >= 0 && SaveChoice < SaveDifficulty.Length && SaveDifficulty[SaveChoice] >= 1 && SaveDifficulty[SaveChoice] <= 4;
+            State.difficulty = saved ? SaveDifficulty[SaveChoice] : Difficulty;
+            State.allowReplays = saved ? SaveAllowReplays[SaveChoice] : AllowReplays;
             State.Draft(Defenders());
             State.continuing = SaveChoice;
             Status = SaveChoice < 0 ? "Choose your commanders, then Ready. All new squads start as militia."
